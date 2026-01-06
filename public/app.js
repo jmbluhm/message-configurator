@@ -25,58 +25,52 @@ let newConversationName = null;
 let cancelCreateConversation = null;
 let createConversationError = null;
 
-// Helper function to get conversation elements (with retry)
+// Helper function to get conversation elements - query directly each time
 function getConversationElement(id) {
+  // Try multiple methods
   let element = document.getElementById(id);
+  if (!element) {
+    // Try querySelector on document
+    element = document.querySelector(`#${id}`);
+  }
   if (!element) {
     // Try querying from appContainer
     const appContainer = document.getElementById('appContainer');
     if (appContainer) {
       element = appContainer.querySelector(`#${id}`);
+      if (!element) {
+        // Try without the # in querySelector
+        element = appContainer.querySelector(id);
+      }
     }
   }
   return element;
 }
 
-// Initialize conversation UI elements
+// Initialize conversation UI elements - just set up handlers, query elements when needed
 function initConversationElements() {
+  // Try to find elements immediately
   conversationSelect = getConversationElement('conversationSelect');
   createConversationButton = getConversationElement('createConversationButton');
-  createConversationModal = getConversationElement('createConversationModal');
-  createConversationForm = getConversationElement('createConversationForm');
-  newConversationName = getConversationElement('newConversationName');
-  cancelCreateConversation = getConversationElement('cancelCreateConversation');
-  createConversationError = getConversationElement('createConversationError');
   
   console.log('Initialized conversation elements:', {
     conversationSelect: !!conversationSelect,
     createConversationButton: !!createConversationButton,
-    createConversationModal: !!createConversationModal,
     appContainer: !!document.getElementById('appContainer'),
-    appContainerDisplay: document.getElementById('appContainer')?.style.display
+    appContainerDisplay: document.getElementById('appContainer')?.style.display,
+    allSelects: document.querySelectorAll('select').length,
+    allButtons: document.querySelectorAll('button').length
   });
   
-  // If elements still not found after a delay, try again (for timing issues)
-  if (!conversationSelect) {
-    setTimeout(() => {
-      conversationSelect = getConversationElement('conversationSelect');
-      createConversationButton = getConversationElement('createConversationButton');
-      createConversationModal = getConversationElement('createConversationModal');
-      createConversationForm = getConversationElement('createConversationForm');
-      newConversationName = getConversationElement('newConversationName');
-      cancelCreateConversation = getConversationElement('cancelCreateConversation');
-      createConversationError = getConversationElement('createConversationError');
-      
-      console.log('Retried after delay:', {
-        conversationSelect: !!conversationSelect,
-        createConversationButton: !!createConversationButton,
-        createConversationModal: !!createConversationModal
-      });
-      
-      if (conversationSelect || createConversationButton) {
-        setupConversationHandlers();
-      }
-    }, 200);
+  // Debug: log all elements in appContainer
+  const appContainer = document.getElementById('appContainer');
+  if (appContainer) {
+    console.log('Elements in appContainer:', {
+      selects: appContainer.querySelectorAll('select').length,
+      buttons: appContainer.querySelectorAll('button').length,
+      hasConversationSelect: !!appContainer.querySelector('#conversationSelect'),
+      innerHTML: appContainer.querySelector('.app-header')?.innerHTML.substring(0, 200)
+    });
   }
 }
 
@@ -300,29 +294,31 @@ async function loadConversations() {
 
 // Update conversation dropdown
 function updateConversationDropdown() {
-  // Try to get element if not already set
-  if (!conversationSelect) {
-    conversationSelect = getConversationElement('conversationSelect');
-  }
+  // Always query fresh - don't rely on stored reference
+  const select = getConversationElement('conversationSelect');
   
-  if (!conversationSelect) {
-    console.error('conversationSelect element not found, retrying...');
+  if (!select) {
+    console.error('conversationSelect element not found');
+    console.log('Available selects:', Array.from(document.querySelectorAll('select')).map(s => s.id));
     // Try one more time after a short delay
     setTimeout(() => {
-      conversationSelect = getConversationElement('conversationSelect');
-      if (conversationSelect) {
+      const retrySelect = getConversationElement('conversationSelect');
+      if (retrySelect) {
         updateConversationDropdown();
       } else {
         console.error('conversationSelect still not found after retry');
       }
-    }, 100);
+    }, 200);
     return;
   }
   
-  conversationSelect.innerHTML = '';
+  // Update the stored reference
+  conversationSelect = select;
+  
+  select.innerHTML = '';
   
   if (conversations.length === 0) {
-    conversationSelect.innerHTML = '<option value="">No conversations</option>';
+    select.innerHTML = '<option value="">No conversations</option>';
     return;
   }
   
@@ -333,7 +329,7 @@ function updateConversationDropdown() {
     if (conv.id === currentConversationId) {
       option.selected = true;
     }
-    conversationSelect.appendChild(option);
+    select.appendChild(option);
   });
 }
 
@@ -416,102 +412,111 @@ async function initializeApp() {
   });
 }
 
-// Set up conversation event handlers
+// Set up conversation event handlers - query elements directly
 function setupConversationHandlers() {
-  // Handle conversation selection change
-  if (conversationSelect) {
-    conversationSelect.addEventListener('change', async (e) => {
-      const newConversationId = e.target.value;
-      if (newConversationId && newConversationId !== currentConversationId) {
-        currentConversationId = newConversationId;
-        await loadConversationData();
-      }
-    });
-  }
-
-  // Handle create conversation button
-  if (createConversationButton) {
-    createConversationButton.addEventListener('click', () => {
-      if (createConversationModal) {
-        createConversationModal.style.display = 'flex';
-        if (newConversationName) {
-          newConversationName.value = '';
-          newConversationName.focus();
+  // Handle conversation selection change - use event delegation
+  const appContainer = document.getElementById('appContainer');
+  if (appContainer) {
+    // Use event delegation on the container
+    appContainer.addEventListener('change', async (e) => {
+      if (e.target.id === 'conversationSelect') {
+        const newConversationId = e.target.value;
+        if (newConversationId && newConversationId !== currentConversationId) {
+          currentConversationId = newConversationId;
+          await loadConversationData();
         }
       }
     });
-  }
-
-  // Handle cancel create conversation
-  if (cancelCreateConversation) {
-    cancelCreateConversation.addEventListener('click', () => {
-      if (createConversationModal) {
-        createConversationModal.style.display = 'none';
+    
+    // Handle create conversation button click
+    appContainer.addEventListener('click', (e) => {
+      if (e.target.id === 'createConversationButton') {
+        const modal = getConversationElement('createConversationModal');
+        const nameInput = getConversationElement('newConversationName');
+        if (modal) {
+          modal.style.display = 'flex';
+          if (nameInput) {
+            nameInput.value = '';
+            nameInput.focus();
+          }
+        }
       }
-      if (createConversationError) {
-        createConversationError.style.display = 'none';
-        createConversationError.textContent = '';
+      
+      if (e.target.id === 'cancelCreateConversation') {
+        const modal = getConversationElement('createConversationModal');
+        const errorDiv = getConversationElement('createConversationError');
+        if (modal) {
+          modal.style.display = 'none';
+        }
+        if (errorDiv) {
+          errorDiv.style.display = 'none';
+          errorDiv.textContent = '';
+        }
       }
     });
-  }
-
-  // Handle create conversation form submission
-  if (createConversationForm) {
-    createConversationForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      
-      const name = newConversationName ? newConversationName.value.trim() : '';
-      if (!name) {
-        return;
-      }
-      
-      // Clear previous error
-      if (createConversationError) {
-        createConversationError.style.display = 'none';
-        createConversationError.textContent = '';
-      }
-      
-      try {
-        const response = await fetch('/api/conversations', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ name }),
-          credentials: 'include'
-        });
+    
+    // Handle create conversation form submission
+    appContainer.addEventListener('submit', async (e) => {
+      if (e.target.id === 'createConversationForm') {
+        e.preventDefault();
         
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Failed to create conversation');
+        const nameInput = getConversationElement('newConversationName');
+        const name = nameInput ? nameInput.value.trim() : '';
+        if (!name) {
+          return;
         }
         
-        const newConversation = await response.json();
-        
-        // Add to conversations list
-        conversations.unshift(newConversation);
-        updateConversationDropdown();
-        
-        // Select the new conversation
-        currentConversationId = newConversation.id;
-        if (conversationSelect) {
-          conversationSelect.value = currentConversationId;
+        // Clear previous error
+        const errorDiv = getConversationElement('createConversationError');
+        if (errorDiv) {
+          errorDiv.style.display = 'none';
+          errorDiv.textContent = '';
         }
         
-        // Hide modal
-        if (createConversationModal) {
-          createConversationModal.style.display = 'none';
-        }
-        if (newConversationName) {
-          newConversationName.value = '';
-        }
-        
-        // Load the new conversation
-        await loadConversationData();
-      } catch (error) {
-        if (createConversationError) {
-          createConversationError.textContent = error.message || 'Failed to create conversation';
-          createConversationError.style.display = 'block';
+        try {
+          const response = await fetch('/api/conversations', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ name }),
+            credentials: 'include'
+          });
+          
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to create conversation');
+          }
+          
+          const newConversation = await response.json();
+          
+          // Add to conversations list
+          conversations.unshift(newConversation);
+          updateConversationDropdown();
+          
+          // Select the new conversation
+          currentConversationId = newConversation.id;
+          const select = getConversationElement('conversationSelect');
+          if (select) {
+            select.value = currentConversationId;
+          }
+          
+          // Hide modal
+          const modal = getConversationElement('createConversationModal');
+          if (modal) {
+            modal.style.display = 'none';
+          }
+          if (nameInput) {
+            nameInput.value = '';
+          }
+          
+          // Load the new conversation
+          await loadConversationData();
+        } catch (error) {
+          if (errorDiv) {
+            errorDiv.textContent = error.message || 'Failed to create conversation';
+            errorDiv.style.display = 'block';
+          }
         }
       }
     });
