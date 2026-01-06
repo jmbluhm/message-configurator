@@ -82,9 +82,8 @@ app.use(requireAuth);
 // Serve static files from public directory
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Load conversation from database
-let conversation = [];
-let conversationLoaded = false;
+// Store conversation state per conversation ID (in-memory, resets on server restart)
+const conversationCache = new Map(); // conversationId -> { messages: [], currentIndex: 0 }
 
 // Parse system actions with bracket syntax: [Action 1, with comma],[Action 2]
 // Commas inside brackets are preserved, commas outside brackets separate actions
@@ -146,11 +145,12 @@ function formatSystemActions(actions) {
   }).join(',');
 }
 
-async function loadConversation() {
+async function loadConversation(conversationId) {
   try {
     const { data, error } = await supabase
-      .from('conversation')
+      .from('conversation_message')
       .select('*')
+      .eq('conversation_id', conversationId)
       .order('turn', { ascending: true });
     
     if (error) {
@@ -158,7 +158,7 @@ async function loadConversation() {
     }
     
     // Convert database rows to conversation format
-    conversation = (data || [])
+    const messages = (data || [])
       .filter(row => row.speaker && row.message) // Filter out empty/invalid rows
       .map(row => ({
         speaker: row.speaker,
@@ -166,106 +166,222 @@ async function loadConversation() {
         systemActions: parseSystemActions(row.system_actions || '')
       }));
     
-    conversationLoaded = true;
-    console.log(`Loaded ${conversation.length} messages from database`);
+    // Cache the conversation
+    conversationCache.set(conversationId, {
+      messages: messages,
+      currentIndex: 0
+    });
+    
+    console.log(`Loaded ${messages.length} messages for conversation ${conversationId}`);
+    return messages;
   } catch (error) {
     console.error('Error loading conversation from database:', error);
     throw error;
   }
 }
 
-// Track conversation state (in-memory, resets on server restart)
-let currentIndex = 0;
+function getConversationState(conversationId) {
+  if (!conversationCache.has(conversationId)) {
+    conversationCache.set(conversationId, {
+      messages: [],
+      currentIndex: 0
+    });
+  }
+  return conversationCache.get(conversationId);
+}
+
+// API endpoint to list all conversations
+app.get('/api/conversations', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('conversation')
+      .select('id, name, created_at, updated_at')
+      .order('updated_at', { ascending: false });
+    
+    if (error) {
+      throw error;
+    }
+    
+    res.json(data || []);
+  } catch (error) {
+    console.error('Error fetching conversations:', error);
+    res.status(500).json({ error: 'Failed to fetch conversations' });
+  }
+});
+
+// API endpoint to create a new conversation
+app.post('/api/conversations', async (req, res) => {
+  try {
+    const { name } = req.body;
+    
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Conversation name is required' });
+    }
+    
+    const { data, error } = await supabase
+      .from('conversation')
+      .insert({ name: name.trim() })
+      .select()
+      .single();
+    
+    if (error) {
+      throw error;
+    }
+    
+    // Initialize empty conversation state
+    conversationCache.set(data.id, {
+      messages: [],
+      currentIndex: 0
+    });
+    
+    res.json(data);
+  } catch (error) {
+    console.error('Error creating conversation:', error);
+    res.status(500).json({ error: 'Failed to create conversation' });
+  }
+});
 
 // API endpoint to get next message
 app.post('/api/next-message', async (req, res) => {
-  if (!conversationLoaded) {
-    try {
-      await loadConversation();
-    } catch (error) {
-      return res.status(500).json({ error: 'Failed to load conversation' });
+  try {
+    const { conversationId } = req.body;
+    
+    if (!conversationId) {
+      return res.status(400).json({ error: 'conversationId is required' });
     }
-  }
-
-  // Find the next AI Agent message
-  let nextAIMessage = null;
-  let nextMerchantMessage = null;
-  let aiIndex = -1;
-  let merchantIndex = -1;
-  let systemActions = [];
-
-  // Start searching from currentIndex
-  for (let i = currentIndex; i < conversation.length; i++) {
-    if (conversation[i].speaker === 'AI Agent' && nextAIMessage === null) {
-      nextAIMessage = conversation[i].message;
-      systemActions = conversation[i].systemActions || [];
-      aiIndex = i;
-      break;
+    
+    const state = getConversationState(conversationId);
+    
+    // Load conversation if not cached or empty
+    if (state.messages.length === 0) {
+      await loadConversation(conversationId);
+      // Reload state after loading
+      const updatedState = getConversationState(conversationId);
+      state.messages = updatedState.messages;
+      state.currentIndex = 0;
     }
-  }
+    
+    const conversation = state.messages;
+    const currentIndex = state.currentIndex;
+    
+    // Find the next AI Agent message
+    let nextAIMessage = null;
+    let nextMerchantMessage = null;
+    let aiIndex = -1;
+    let merchantIndex = -1;
+    let systemActions = [];
 
-  // Find the next Merchant message after the AI message
-  if (aiIndex >= 0) {
-    for (let i = aiIndex + 1; i < conversation.length; i++) {
-      if (conversation[i].speaker === 'Merchant') {
-        nextMerchantMessage = conversation[i].message;
-        merchantIndex = i;
+    // Start searching from currentIndex
+    for (let i = currentIndex; i < conversation.length; i++) {
+      if (conversation[i].speaker === 'AI Agent' && nextAIMessage === null) {
+        nextAIMessage = conversation[i].message;
+        systemActions = conversation[i].systemActions || [];
+        aiIndex = i;
         break;
       }
     }
-  }
 
-  // Update currentIndex to point after the AI message we just returned
-  if (aiIndex >= 0) {
-    currentIndex = aiIndex + 1;
-  }
+    // Find the next Merchant message after the AI message
+    if (aiIndex >= 0) {
+      for (let i = aiIndex + 1; i < conversation.length; i++) {
+        if (conversation[i].speaker === 'Merchant') {
+          nextMerchantMessage = conversation[i].message;
+          merchantIndex = i;
+          break;
+        }
+      }
+    }
 
-  // Return response
-  res.json({
-    aiMessage: nextAIMessage,
-    merchantMessage: nextMerchantMessage,
-    systemActions: systemActions,
-    hasMore: currentIndex < conversation.length
-  });
+    // Update currentIndex to point after the AI message we just returned
+    if (aiIndex >= 0) {
+      state.currentIndex = aiIndex + 1;
+    }
+
+    // Return response
+    res.json({
+      aiMessage: nextAIMessage,
+      merchantMessage: nextMerchantMessage,
+      systemActions: systemActions,
+      hasMore: state.currentIndex < conversation.length
+    });
+  } catch (error) {
+    console.error('Error getting next message:', error);
+    res.status(500).json({ error: 'Failed to get next message' });
+  }
 });
 
 // Reset conversation endpoint
 app.post('/api/reset', (req, res) => {
-  currentIndex = 0;
-  res.json({ message: 'Conversation reset' });
+  try {
+    const { conversationId } = req.body;
+    
+    if (!conversationId) {
+      return res.status(400).json({ error: 'conversationId is required' });
+    }
+    
+    const state = getConversationState(conversationId);
+    state.currentIndex = 0;
+    
+    res.json({ message: 'Conversation reset' });
+  } catch (error) {
+    console.error('Error resetting conversation:', error);
+    res.status(500).json({ error: 'Failed to reset conversation' });
+  }
 });
 
-// Get conversation CSV
+// Get conversation messages
 app.get('/api/conversation', async (req, res) => {
-  if (!conversationLoaded) {
-    try {
-      await loadConversation();
-    } catch (error) {
-      return res.status(500).json({ error: 'Failed to load conversation' });
+  try {
+    const conversationId = req.query.conversationId;
+    
+    if (!conversationId) {
+      return res.status(400).json({ error: 'conversationId query parameter is required' });
     }
+    
+    const state = getConversationState(conversationId);
+    
+    // Load conversation if not cached or empty
+    if (state.messages.length === 0) {
+      await loadConversation(conversationId);
+      // Reload state after loading
+      const updatedState = getConversationState(conversationId);
+      state.messages = updatedState.messages;
+    }
+    
+    // Return conversation as array for frontend editing
+    const conversationData = state.messages.map((msg, index) => ({
+      turn: index + 1,
+      speaker: msg.speaker,
+      message: msg.message,
+      system_actions: formatSystemActions(msg.systemActions)
+    }));
+    
+    res.json(conversationData);
+  } catch (error) {
+    console.error('Error fetching conversation:', error);
+    res.status(500).json({ error: 'Failed to fetch conversation' });
   }
-  
-  // Return conversation as array for frontend editing
-  const conversationData = conversation.map((msg, index) => ({
-    turn: index + 1,
-    speaker: msg.speaker,
-    message: msg.message,
-    system_actions: formatSystemActions(msg.systemActions)
-  }));
-  
-  res.json(conversationData);
 });
 
 // Save conversation to database
 app.post('/api/conversation', async (req, res) => {
   try {
-    const conversationData = req.body;
+    const { conversationId, conversationData } = req.body;
+    
+    if (!conversationId) {
+      return res.status(400).json({ error: 'conversationId is required' });
+    }
+    
+    if (!conversationData || !Array.isArray(conversationData)) {
+      return res.status(400).json({ error: 'conversationData array is required' });
+    }
     
     // Prepare data for database
     // Parse and reformat system_actions to ensure proper bracket syntax
     const dbData = conversationData.map(row => {
       const systemActions = parseSystemActions(row.system_actions || '');
       return {
+        conversation_id: conversationId,
         turn: parseInt(row.turn) || null,
         speaker: row.speaker || '',
         message: row.message || '',
@@ -273,31 +389,38 @@ app.post('/api/conversation', async (req, res) => {
       };
     });
     
-    // Delete all existing records and insert new ones
-    // Using upsert with a unique constraint on turn would be better, but for simplicity
-    // we'll delete and reinsert
+    // Delete all existing records for this conversation and insert new ones
     const { error: deleteError } = await supabase
-      .from('conversation')
+      .from('conversation_message')
       .delete()
-      .gte('id', 0); // Delete all records (gte 'id', 0 is always true)
+      .eq('conversation_id', conversationId);
     
     if (deleteError) {
       throw deleteError;
     }
     
-    // Insert new records
-    const { data, error: insertError } = await supabase
-      .from('conversation')
-      .insert(dbData)
-      .select();
-    
-    if (insertError) {
-      throw insertError;
+    // Insert new records (only if there's data to insert)
+    if (dbData.length > 0) {
+      const { data, error: insertError } = await supabase
+        .from('conversation_message')
+        .insert(dbData)
+        .select();
+      
+      if (insertError) {
+        throw insertError;
+      }
     }
     
-    // Reload conversation
-    await loadConversation();
-    currentIndex = 0; // Reset conversation state
+    // Update conversation updated_at timestamp
+    await supabase
+      .from('conversation')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', conversationId);
+    
+    // Reload conversation and reset state
+    await loadConversation(conversationId);
+    const state = getConversationState(conversationId);
+    state.currentIndex = 0;
     
     res.json({ message: 'Conversation saved successfully', count: dbData.length });
   } catch (error) {
@@ -307,10 +430,7 @@ app.post('/api/conversation', async (req, res) => {
   }
 });
 
-// Initialize: Load conversation on startup
-loadConversation().catch(error => {
-  console.error('Failed to load conversation on startup:', error);
-});
+// No need to load conversation on startup - will be loaded on demand
 
 // Start server
 app.listen(PORT, () => {

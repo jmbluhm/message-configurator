@@ -12,6 +12,19 @@ const sendButton = document.getElementById('sendButton');
 const autoFillIndicator = document.getElementById('autoFillIndicator');
 const resetButton = document.getElementById('resetButton');
 
+// Conversation management
+let currentConversationId = null;
+let conversations = [];
+
+// Conversation UI elements
+const conversationSelect = document.getElementById('conversationSelect');
+const createConversationButton = document.getElementById('createConversationButton');
+const createConversationModal = document.getElementById('createConversationModal');
+const createConversationForm = document.getElementById('createConversationForm');
+const newConversationName = document.getElementById('newConversationName');
+const cancelCreateConversation = document.getElementById('cancelCreateConversation');
+const createConversationError = document.getElementById('createConversationError');
+
 let isWaitingForResponse = false;
 let systemActionCounter = 0;
 let aiAgentMessageNumber = 0;
@@ -96,11 +109,8 @@ function autoResizeTextarea(textarea) {
 async function checkAuthentication() {
   try {
     // Try to access a protected endpoint to check if authenticated
-    const response = await fetch('/api/reset', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+    // Use conversations endpoint which doesn't require conversationId
+    const response = await fetch('/api/conversations', {
       credentials: 'include'
     });
     
@@ -189,20 +199,201 @@ if (passwordForm) {
   });
 }
 
-// Initialize app (moved from DOMContentLoaded)
-async function initializeApp() {
-  // Reset conversation state on page load
+// Load all conversations
+async function loadConversations() {
+  try {
+    const response = await fetch('/api/conversations', {
+      credentials: 'include'
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to load conversations');
+    }
+    
+    conversations = await response.json();
+    updateConversationDropdown();
+    
+    // If there are conversations and none is selected, select the first one
+    if (conversations.length > 0 && !currentConversationId) {
+      currentConversationId = conversations[0].id;
+      conversationSelect.value = currentConversationId;
+      await loadConversationData();
+    }
+  } catch (error) {
+    console.error('Error loading conversations:', error);
+    conversationSelect.innerHTML = '<option value="">Error loading conversations</option>';
+  }
+}
+
+// Update conversation dropdown
+function updateConversationDropdown() {
+  conversationSelect.innerHTML = '';
+  
+  if (conversations.length === 0) {
+    conversationSelect.innerHTML = '<option value="">No conversations</option>';
+    return;
+  }
+  
+  conversations.forEach(conv => {
+    const option = document.createElement('option');
+    option.value = conv.id;
+    option.textContent = conv.name;
+    if (conv.id === currentConversationId) {
+      option.selected = true;
+    }
+    conversationSelect.appendChild(option);
+  });
+}
+
+// Load conversation data for the selected conversation
+async function loadConversationData() {
+  if (!currentConversationId) {
+    return;
+  }
+  
+  // Reset conversation state
   try {
     await fetch('/api/reset', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
+      body: JSON.stringify({ conversationId: currentConversationId }),
       credentials: 'include'
     });
   } catch (error) {
-    console.error('Error resetting conversation on page load:', error);
+    console.error('Error resetting conversation:', error);
   }
+  
+  // Clear UI
+  chatMessages.innerHTML = '';
+  systemNotes.innerHTML = '';
+  systemActionCounter = 0;
+  aiAgentMessageNumber = 0;
+  conversationIndex = 0;
+  currentlyEditingMessage = null;
+  currentlyEditingSystemAction = null;
+  isWaitingForResponse = false;
+  
+  if (messageInput) {
+    messageInput.value = '';
+    messageInput.disabled = false;
+    autoResizeTextarea(messageInput);
+  }
+  
+  if (sendButton) {
+    sendButton.disabled = false;
+  }
+  
+  if (autoFillIndicator) {
+    autoFillIndicator.style.display = 'none';
+  }
+  
+  // Load conversation editor
+  await loadConversationEditor();
+  updateAddRowButtonText(null);
+  
+  // Send empty message to trigger first AI response
+  sendMessage('', true);
+}
+
+// Handle conversation selection change
+if (conversationSelect) {
+  conversationSelect.addEventListener('change', async (e) => {
+    const newConversationId = e.target.value;
+    if (newConversationId && newConversationId !== currentConversationId) {
+      currentConversationId = newConversationId;
+      await loadConversationData();
+    }
+  });
+}
+
+// Handle create conversation button
+if (createConversationButton) {
+  createConversationButton.addEventListener('click', () => {
+    if (createConversationModal) {
+      createConversationModal.style.display = 'flex';
+      if (newConversationName) {
+        newConversationName.value = '';
+        newConversationName.focus();
+      }
+    }
+  });
+}
+
+// Handle cancel create conversation
+if (cancelCreateConversation) {
+  cancelCreateConversation.addEventListener('click', () => {
+    if (createConversationModal) {
+      createConversationModal.style.display = 'none';
+    }
+    if (createConversationError) {
+      createConversationError.style.display = 'none';
+      createConversationError.textContent = '';
+    }
+  });
+}
+
+// Handle create conversation form submission
+if (createConversationForm) {
+  createConversationForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const name = newConversationName.value.trim();
+    if (!name) {
+      return;
+    }
+    
+    // Clear previous error
+    if (createConversationError) {
+      createConversationError.style.display = 'none';
+      createConversationError.textContent = '';
+    }
+    
+    try {
+      const response = await fetch('/api/conversations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name }),
+        credentials: 'include'
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create conversation');
+      }
+      
+      const newConversation = await response.json();
+      
+      // Add to conversations list
+      conversations.unshift(newConversation);
+      updateConversationDropdown();
+      
+      // Select the new conversation
+      currentConversationId = newConversation.id;
+      conversationSelect.value = currentConversationId;
+      
+      // Hide modal
+      createConversationModal.style.display = 'none';
+      newConversationName.value = '';
+      
+      // Load the new conversation
+      await loadConversationData();
+    } catch (error) {
+      if (createConversationError) {
+        createConversationError.textContent = error.message || 'Failed to create conversation';
+        createConversationError.style.display = 'block';
+      }
+    }
+  });
+}
+
+// Initialize app (moved from DOMContentLoaded)
+async function initializeApp() {
+  // Load conversations first
+  await loadConversations();
   
   // Clear all client-side conversation state
   chatMessages.innerHTML = '';
@@ -275,13 +466,21 @@ async function sendMessage(userMessage, isInitial = false) {
   isWaitingForResponse = true;
   autoFillIndicator.style.display = 'none';
 
+  if (!currentConversationId) {
+    console.error('No conversation selected');
+    return;
+  }
+
   try {
     const response = await fetch('/api/next-message', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ message: userMessage }),
+      body: JSON.stringify({ 
+        conversationId: currentConversationId,
+        message: userMessage 
+      }),
       credentials: 'include'
     });
 
@@ -883,12 +1082,20 @@ async function saveMessageEdit(messageDiv, dataIndex, newMessage) {
       row.turn = index + 1;
     });
     
+    if (!currentConversationId) {
+      alert('No conversation selected');
+      return;
+    }
+    
     const response = await fetch('/api/conversation', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(sortedData),
+      body: JSON.stringify({
+        conversationId: currentConversationId,
+        conversationData: sortedData
+      }),
       credentials: 'include'
     });
     
@@ -1148,12 +1355,20 @@ async function saveSystemActionEdit(actionDiv, conversationDataIndex, actionInde
       row.turn = index + 1;
     });
     
+    if (!currentConversationId) {
+      alert('No conversation selected');
+      return;
+    }
+    
     const response = await fetch('/api/conversation', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(sortedData),
+      body: JSON.stringify({
+        conversationId: currentConversationId,
+        conversationData: sortedData
+      }),
       credentials: 'include'
     });
     
@@ -1372,6 +1587,10 @@ async function resetConversation() {
     return; // Don't reset while waiting for a response
   }
 
+  if (!currentConversationId) {
+    return;
+  }
+
   try {
     // Call reset endpoint
     await fetch('/api/reset', {
@@ -1379,6 +1598,7 @@ async function resetConversation() {
       headers: {
         'Content-Type': 'application/json',
       },
+      body: JSON.stringify({ conversationId: currentConversationId }),
       credentials: 'include'
     });
 
@@ -1449,8 +1669,12 @@ let conversationData = [];
 
 // Load conversation data into editor
 async function loadConversationEditor() {
+  if (!currentConversationId) {
+    return;
+  }
+  
   try {
-    const response = await fetch('/api/conversation', {
+    const response = await fetch(`/api/conversation?conversationId=${currentConversationId}`, {
       credentials: 'include'
     });
     if (!response.ok) {
@@ -1759,12 +1983,20 @@ async function saveConversation() {
       }
     });
     
+    if (!currentConversationId) {
+      alert('No conversation selected');
+      return;
+    }
+    
     const response = await fetch('/api/conversation', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(sortedData),
+      body: JSON.stringify({
+        conversationId: currentConversationId,
+        conversationData: sortedData
+      }),
       credentials: 'include'
     });
     
