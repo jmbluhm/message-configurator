@@ -265,55 +265,107 @@ async function loadConversations() {
     conversations = await response.json();
     console.log('Loaded conversations:', conversations);
     
-    if (!conversationSelect) {
-      console.error('conversationSelect element not found in DOM');
-      return;
-    }
-    
+    // Force update dropdown - query element fresh
     updateConversationDropdown();
     
     // If there are conversations and none is selected, select the first one
     if (conversations.length > 0 && !currentConversationId) {
       currentConversationId = conversations[0].id;
-      conversationSelect.value = currentConversationId;
-      console.log('Selected first conversation:', currentConversationId);
-      await loadConversationData();
+      // Query select element fresh and set value
+      const select = getConversationElement('conversationSelect');
+      if (select) {
+        select.value = currentConversationId;
+        console.log('Selected first conversation:', currentConversationId);
+        await loadConversationData();
+      } else {
+        console.error('Cannot set conversation - select element not found');
+        // Retry after delay
+        setTimeout(async () => {
+          const retrySelect = getConversationElement('conversationSelect');
+          if (retrySelect) {
+            retrySelect.value = currentConversationId;
+            await loadConversationData();
+          }
+        }, 500);
+      }
     } else if (conversations.length === 0) {
       console.warn('No conversations found. Create a new conversation to get started.');
-      if (conversationSelect) {
-        conversationSelect.innerHTML = '<option value="">No conversations - Create one below</option>';
+      const select = getConversationElement('conversationSelect');
+      if (select) {
+        select.innerHTML = '<option value="">No conversations - Create one below</option>';
       }
     }
   } catch (error) {
     console.error('Error loading conversations:', error);
-    if (conversationSelect) {
-      conversationSelect.innerHTML = `<option value="">Error: ${error.message}</option>`;
+    const select = getConversationElement('conversationSelect');
+    if (select) {
+      select.innerHTML = `<option value="">Error: ${error.message}</option>`;
     }
   }
 }
 
-// Update conversation dropdown
+// Update conversation dropdown - with aggressive retry
 function updateConversationDropdown() {
-  // Always query fresh - don't rely on stored reference
-  const select = getConversationElement('conversationSelect');
+  // Try multiple methods to find the select element
+  let select = document.getElementById('conversationSelect');
   
   if (!select) {
-    console.error('conversationSelect element not found');
-    console.log('Available selects:', Array.from(document.querySelectorAll('select')).map(s => s.id));
-    // Try one more time after a short delay
-    setTimeout(() => {
-      const retrySelect = getConversationElement('conversationSelect');
-      if (retrySelect) {
+    // Try querySelector
+    select = document.querySelector('#conversationSelect');
+  }
+  
+  if (!select) {
+    // Try from appContainer
+    const appContainer = document.getElementById('appContainer');
+    if (appContainer) {
+      select = appContainer.querySelector('#conversationSelect');
+    }
+  }
+  
+  if (!select) {
+    // Try finding any select in the header
+    const header = document.querySelector('.app-header');
+    if (header) {
+      select = header.querySelector('select');
+    }
+  }
+  
+  if (!select) {
+    console.error('conversationSelect element not found after all attempts');
+    console.log('Debug info:', {
+      allSelects: Array.from(document.querySelectorAll('select')).map(s => ({ id: s.id, className: s.className })),
+      appContainer: !!document.getElementById('appContainer'),
+      header: !!document.querySelector('.app-header'),
+      headerHTML: document.querySelector('.app-header')?.innerHTML.substring(0, 500)
+    });
+    
+    // Aggressive retry - try multiple times with increasing delays
+    let retryCount = 0;
+    const maxRetries = 5;
+    const retryInterval = setInterval(() => {
+      retryCount++;
+      select = document.getElementById('conversationSelect') || 
+               document.querySelector('#conversationSelect') ||
+               document.querySelector('.app-header select');
+      
+      if (select) {
+        clearInterval(retryInterval);
+        console.log('Found conversationSelect on retry', retryCount);
+        conversationSelect = select;
         updateConversationDropdown();
-      } else {
-        console.error('conversationSelect still not found after retry');
+      } else if (retryCount >= maxRetries) {
+        clearInterval(retryInterval);
+        console.error('conversationSelect not found after', maxRetries, 'retries');
+        // Create the dropdown manually if it doesn't exist
+        createDropdownManually();
       }
-    }, 200);
+    }, 300);
     return;
   }
   
-  // Update the stored reference
+  // Found it!
   conversationSelect = select;
+  console.log('Successfully found and updating conversationSelect');
   
   select.innerHTML = '';
   
@@ -331,6 +383,43 @@ function updateConversationDropdown() {
     }
     select.appendChild(option);
   });
+}
+
+// Fallback: Create dropdown manually if it doesn't exist
+function createDropdownManually() {
+  const header = document.querySelector('.app-header');
+  if (!header) return;
+  
+  // Check if selector div exists
+  let selectorDiv = header.querySelector('.conversation-selector');
+  if (!selectorDiv) {
+    selectorDiv = document.createElement('div');
+    selectorDiv.className = 'conversation-selector';
+    header.appendChild(selectorDiv);
+  }
+  
+  // Check if select exists
+  let select = selectorDiv.querySelector('select');
+  if (!select) {
+    select = document.createElement('select');
+    select.id = 'conversationSelect';
+    select.className = 'conversation-dropdown';
+    selectorDiv.insertBefore(select, selectorDiv.firstChild);
+  }
+  
+  // Check if button exists
+  let button = selectorDiv.querySelector('#createConversationButton');
+  if (!button) {
+    button = document.createElement('button');
+    button.id = 'createConversationButton';
+    button.className = 'btn btn-primary';
+    button.textContent = '+ New Conversation';
+    selectorDiv.appendChild(button);
+  }
+  
+  conversationSelect = select;
+  console.log('Manually created conversation dropdown');
+  updateConversationDropdown();
 }
 
 // Load conversation data for the selected conversation
@@ -398,18 +487,19 @@ async function initializeApp() {
     });
   }
   
-  // Initialize conversation UI elements
-  // Use requestAnimationFrame to ensure DOM is ready after showApp()
-  requestAnimationFrame(() => {
+  // Set up conversation handlers immediately (uses event delegation, doesn't need elements)
+  setupConversationHandlers();
+  
+  // Wait for DOM to be fully ready, then initialize
+  // Use multiple strategies to ensure elements are found
+  setTimeout(() => {
     initConversationElements();
     
-    // Set up handlers after a brief delay
+    // Load conversations after a delay to ensure DOM is ready
     setTimeout(() => {
-      setupConversationHandlers();
-      // Load conversations
       loadConversations();
-    }, 100);
-  });
+    }, 200);
+  }, 100);
 }
 
 // Set up conversation event handlers - query elements directly
