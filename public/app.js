@@ -16,14 +16,31 @@ const resetButton = document.getElementById('resetButton');
 let currentConversationId = null;
 let conversations = [];
 
-// Conversation UI elements
-const conversationSelect = document.getElementById('conversationSelect');
-const createConversationButton = document.getElementById('createConversationButton');
-const createConversationModal = document.getElementById('createConversationModal');
-const createConversationForm = document.getElementById('createConversationForm');
-const newConversationName = document.getElementById('newConversationName');
-const cancelCreateConversation = document.getElementById('cancelCreateConversation');
-const createConversationError = document.getElementById('createConversationError');
+// Conversation UI elements - will be set after DOM loads
+let conversationSelect = null;
+let createConversationButton = null;
+let createConversationModal = null;
+let createConversationForm = null;
+let newConversationName = null;
+let cancelCreateConversation = null;
+let createConversationError = null;
+
+// Initialize conversation UI elements
+function initConversationElements() {
+  conversationSelect = document.getElementById('conversationSelect');
+  createConversationButton = document.getElementById('createConversationButton');
+  createConversationModal = document.getElementById('createConversationModal');
+  createConversationForm = document.getElementById('createConversationForm');
+  newConversationName = document.getElementById('newConversationName');
+  cancelCreateConversation = document.getElementById('cancelCreateConversation');
+  createConversationError = document.getElementById('createConversationError');
+  
+  console.log('Initialized conversation elements:', {
+    conversationSelect: !!conversationSelect,
+    createConversationButton: !!createConversationButton,
+    createConversationModal: !!createConversationModal
+  });
+}
 
 let isWaitingForResponse = false;
 let systemActionCounter = 0;
@@ -202,31 +219,54 @@ if (passwordForm) {
 // Load all conversations
 async function loadConversations() {
   try {
+    console.log('Loading conversations...');
     const response = await fetch('/api/conversations', {
       credentials: 'include'
     });
     
     if (!response.ok) {
-      throw new Error('Failed to load conversations');
+      const errorText = await response.text();
+      console.error('Failed to load conversations:', response.status, errorText);
+      throw new Error(`Failed to load conversations: ${response.status}`);
     }
     
     conversations = await response.json();
+    console.log('Loaded conversations:', conversations);
+    
+    if (!conversationSelect) {
+      console.error('conversationSelect element not found in DOM');
+      return;
+    }
+    
     updateConversationDropdown();
     
     // If there are conversations and none is selected, select the first one
     if (conversations.length > 0 && !currentConversationId) {
       currentConversationId = conversations[0].id;
       conversationSelect.value = currentConversationId;
+      console.log('Selected first conversation:', currentConversationId);
       await loadConversationData();
+    } else if (conversations.length === 0) {
+      console.warn('No conversations found. Create a new conversation to get started.');
+      if (conversationSelect) {
+        conversationSelect.innerHTML = '<option value="">No conversations - Create one below</option>';
+      }
     }
   } catch (error) {
     console.error('Error loading conversations:', error);
-    conversationSelect.innerHTML = '<option value="">Error loading conversations</option>';
+    if (conversationSelect) {
+      conversationSelect.innerHTML = `<option value="">Error: ${error.message}</option>`;
+    }
   }
 }
 
 // Update conversation dropdown
 function updateConversationDropdown() {
+  if (!conversationSelect) {
+    console.error('conversationSelect element not found');
+    return;
+  }
+  
   conversationSelect.innerHTML = '';
   
   if (conversations.length === 0) {
@@ -297,142 +337,129 @@ async function loadConversationData() {
   sendMessage('', true);
 }
 
-// Handle conversation selection change
-if (conversationSelect) {
-  conversationSelect.addEventListener('change', async (e) => {
-    const newConversationId = e.target.value;
-    if (newConversationId && newConversationId !== currentConversationId) {
-      currentConversationId = newConversationId;
-      await loadConversationData();
-    }
-  });
-}
-
-// Handle create conversation button
-if (createConversationButton) {
-  createConversationButton.addEventListener('click', () => {
-    if (createConversationModal) {
-      createConversationModal.style.display = 'flex';
-      if (newConversationName) {
-        newConversationName.value = '';
-        newConversationName.focus();
-      }
-    }
-  });
-}
-
-// Handle cancel create conversation
-if (cancelCreateConversation) {
-  cancelCreateConversation.addEventListener('click', () => {
-    if (createConversationModal) {
-      createConversationModal.style.display = 'none';
-    }
-    if (createConversationError) {
-      createConversationError.style.display = 'none';
-      createConversationError.textContent = '';
-    }
-  });
-}
-
-// Handle create conversation form submission
-if (createConversationForm) {
-  createConversationForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    const name = newConversationName.value.trim();
-    if (!name) {
-      return;
-    }
-    
-    // Clear previous error
-    if (createConversationError) {
-      createConversationError.style.display = 'none';
-      createConversationError.textContent = '';
-    }
-    
-    try {
-      const response = await fetch('/api/conversations', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ name }),
-        credentials: 'include'
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create conversation');
-      }
-      
-      const newConversation = await response.json();
-      
-      // Add to conversations list
-      conversations.unshift(newConversation);
-      updateConversationDropdown();
-      
-      // Select the new conversation
-      currentConversationId = newConversation.id;
-      conversationSelect.value = currentConversationId;
-      
-      // Hide modal
-      createConversationModal.style.display = 'none';
-      newConversationName.value = '';
-      
-      // Load the new conversation
-      await loadConversationData();
-    } catch (error) {
-      if (createConversationError) {
-        createConversationError.textContent = error.message || 'Failed to create conversation';
-        createConversationError.style.display = 'block';
-      }
-    }
-  });
-}
+// Event handlers are now set up in setupConversationHandlers() function
 
 // Initialize app (moved from DOMContentLoaded)
 async function initializeApp() {
-  // Load conversations first
-  await loadConversations();
+  console.log('Initializing app...');
   
-  // Clear all client-side conversation state
-  chatMessages.innerHTML = '';
-  systemNotes.innerHTML = '';
-  systemActionCounter = 0;
-  aiAgentMessageNumber = 0;
-  conversationIndex = 0;
-  currentlyEditingMessage = null;
-  currentlyEditingSystemAction = null;
-  isWaitingForResponse = false;
+  // Initialize conversation UI elements
+  initConversationElements();
   
-  // Reset UI state
+  // Set up auto-resize for message input
   if (messageInput) {
-    messageInput.value = '';
-    messageInput.disabled = false;
-    autoResizeTextarea(messageInput);
-    
-    // Auto-resize on input
     messageInput.addEventListener('input', () => {
       autoResizeTextarea(messageInput);
     });
   }
   
-  if (sendButton) {
-    sendButton.disabled = false;
+  // Set up conversation event handlers
+  setupConversationHandlers();
+  
+  // Load conversations first - this will also load the first conversation if available
+  await loadConversations();
+}
+
+// Set up conversation event handlers
+function setupConversationHandlers() {
+  // Handle conversation selection change
+  if (conversationSelect) {
+    conversationSelect.addEventListener('change', async (e) => {
+      const newConversationId = e.target.value;
+      if (newConversationId && newConversationId !== currentConversationId) {
+        currentConversationId = newConversationId;
+        await loadConversationData();
+      }
+    });
   }
-  
-  if (autoFillIndicator) {
-    autoFillIndicator.style.display = 'none';
+
+  // Handle create conversation button
+  if (createConversationButton) {
+    createConversationButton.addEventListener('click', () => {
+      if (createConversationModal) {
+        createConversationModal.style.display = 'flex';
+        if (newConversationName) {
+          newConversationName.value = '';
+          newConversationName.focus();
+        }
+      }
+    });
   }
-  
-  // Load conversation editor on page load
-  loadConversationEditor();
-  
-  // Initialize Add Row button text
-  updateAddRowButtonText(null);
-  
-  // Send empty message to trigger first AI response
-  sendMessage('', true);
+
+  // Handle cancel create conversation
+  if (cancelCreateConversation) {
+    cancelCreateConversation.addEventListener('click', () => {
+      if (createConversationModal) {
+        createConversationModal.style.display = 'none';
+      }
+      if (createConversationError) {
+        createConversationError.style.display = 'none';
+        createConversationError.textContent = '';
+      }
+    });
+  }
+
+  // Handle create conversation form submission
+  if (createConversationForm) {
+    createConversationForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const name = newConversationName ? newConversationName.value.trim() : '';
+      if (!name) {
+        return;
+      }
+      
+      // Clear previous error
+      if (createConversationError) {
+        createConversationError.style.display = 'none';
+        createConversationError.textContent = '';
+      }
+      
+      try {
+        const response = await fetch('/api/conversations', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ name }),
+          credentials: 'include'
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to create conversation');
+        }
+        
+        const newConversation = await response.json();
+        
+        // Add to conversations list
+        conversations.unshift(newConversation);
+        updateConversationDropdown();
+        
+        // Select the new conversation
+        currentConversationId = newConversation.id;
+        if (conversationSelect) {
+          conversationSelect.value = currentConversationId;
+        }
+        
+        // Hide modal
+        if (createConversationModal) {
+          createConversationModal.style.display = 'none';
+        }
+        if (newConversationName) {
+          newConversationName.value = '';
+        }
+        
+        // Load the new conversation
+        await loadConversationData();
+      } catch (error) {
+        if (createConversationError) {
+          createConversationError.textContent = error.message || 'Failed to create conversation';
+          createConversationError.style.display = 'block';
+        }
+      }
+    });
+  }
 }
 
 // Initialize: Check authentication and load app

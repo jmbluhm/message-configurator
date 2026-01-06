@@ -72,9 +72,6 @@ body {
     padding: var(--spacing-lg) var(--spacing-xxl);
     border-bottom: 2px solid var(--color-border-divider);
     flex-shrink: 0;
-}
-
-.app-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
