@@ -27,23 +27,35 @@ let createConversationError = null;
 
 // Helper function to get conversation elements - query directly each time
 function getConversationElement(id) {
-  // Try multiple methods
+  // Try multiple methods - be more aggressive
   let element = document.getElementById(id);
+  
   if (!element) {
     // Try querySelector on document
     element = document.querySelector(`#${id}`);
   }
+  
   if (!element) {
     // Try querying from appContainer
     const appContainer = document.getElementById('appContainer');
     if (appContainer) {
       element = appContainer.querySelector(`#${id}`);
-      if (!element) {
-        // Try without the # in querySelector
-        element = appContainer.querySelector(id);
-      }
     }
   }
+  
+  if (!element) {
+    // Try querying from body
+    element = document.body.querySelector(`#${id}`);
+  }
+  
+  if (!element) {
+    // Last resort - try all elements with that ID
+    const allElements = document.querySelectorAll(`[id="${id}"]`);
+    if (allElements.length > 0) {
+      element = allElements[0];
+    }
+  }
+  
   return element;
 }
 
@@ -384,6 +396,86 @@ function updateConversationDropdown() {
   });
 }
 
+// Fallback: Create modal manually if it doesn't exist
+function createModalManually() {
+  const appContainer = document.getElementById('appContainer');
+  if (!appContainer) {
+    console.error('Cannot create modal - appContainer not found');
+    return;
+  }
+  
+  // Check if modal already exists
+  let modal = appContainer.querySelector('#createConversationModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'createConversationModal';
+    modal.className = 'modal-overlay';
+    modal.style.display = 'none';
+    
+    const modalContent = document.createElement('div');
+    modalContent.className = 'modal-content';
+    
+    const title = document.createElement('h2');
+    title.textContent = 'Create New Conversation';
+    modalContent.appendChild(title);
+    
+    const form = document.createElement('form');
+    form.id = 'createConversationForm';
+    
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.id = 'newConversationName';
+    nameInput.placeholder = 'Enter conversation name...';
+    nameInput.required = true;
+    nameInput.autocomplete = 'off';
+    form.appendChild(nameInput);
+    
+    const errorDiv = document.createElement('div');
+    errorDiv.id = 'createConversationError';
+    errorDiv.className = 'modal-error';
+    errorDiv.style.display = 'none';
+    form.appendChild(errorDiv);
+    
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'modal-actions';
+    
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.id = 'cancelCreateConversation';
+    cancelBtn.className = 'btn btn-secondary';
+    cancelBtn.textContent = 'Cancel';
+    actionsDiv.appendChild(cancelBtn);
+    
+    const submitBtn = document.createElement('button');
+    submitBtn.type = 'submit';
+    submitBtn.className = 'btn btn-primary';
+    submitBtn.textContent = 'Create';
+    actionsDiv.appendChild(submitBtn);
+    
+    form.appendChild(actionsDiv);
+    modalContent.appendChild(form);
+    modal.appendChild(modalContent);
+    
+    // Insert modal into appContainer (before panels-wrapper)
+    const panelsWrapper = appContainer.querySelector('.panels-wrapper');
+    if (panelsWrapper) {
+      appContainer.insertBefore(modal, panelsWrapper);
+    } else {
+      appContainer.appendChild(modal);
+    }
+    
+    console.log('Manually created conversation modal');
+  }
+  
+  // Show the modal
+  modal.style.display = 'flex';
+  const nameInput = modal.querySelector('#newConversationName');
+  if (nameInput) {
+    nameInput.value = '';
+    setTimeout(() => nameInput.focus(), 50);
+  }
+}
+
 // Fallback: Create dropdown manually if it doesn't exist
 async function createDropdownManually() {
   const header = document.querySelector('.app-header');
@@ -598,11 +690,32 @@ function setupConversationHandlers() {
           // Try to find modal using different methods
           const modalById = document.getElementById('createConversationModal');
           const modalByQuery = document.querySelector('#createConversationModal');
+          const modalInBody = document.body.querySelector('#createConversationModal');
+          const allModals = document.querySelectorAll('[id="createConversationModal"]');
           console.log('Modal search results:', {
             byId: !!modalById,
             byQuery: !!modalByQuery,
-            inAppContainer: !!appContainer.querySelector('#createConversationModal')
+            inBody: !!modalInBody,
+            allModals: allModals.length,
+            appContainer: !!appContainer,
+            appContainerHTML: appContainer ? appContainer.innerHTML.substring(0, 500) : 'no container'
           });
+          
+          // If we found it by another method, use it
+          if (modalById || modalByQuery || modalInBody || allModals.length > 0) {
+            const foundModal = modalById || modalByQuery || modalInBody || allModals[0];
+            foundModal.style.display = 'flex';
+            const nameInput = document.getElementById('newConversationName') || 
+                            document.querySelector('#newConversationName');
+            if (nameInput) {
+              nameInput.value = '';
+              setTimeout(() => nameInput.focus(), 50);
+            }
+          } else {
+            // Modal doesn't exist - create it
+            console.log('Creating modal manually');
+            createModalManually();
+          }
         }
       }
       
