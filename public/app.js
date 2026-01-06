@@ -269,9 +269,11 @@ async function loadConversations() {
     updateConversationDropdown();
     
     // If there are conversations and none is selected, select the first one
-    if (conversations.length > 0 && !currentConversationId) {
-      currentConversationId = conversations[0].id;
-      console.log('Auto-selecting first conversation:', currentConversationId);
+    if (conversations.length > 0) {
+      if (!currentConversationId) {
+        currentConversationId = conversations[0].id;
+        console.log('Auto-selecting first conversation:', currentConversationId);
+      }
       
       // Query select element fresh and set value
       const select = getConversationElement('conversationSelect');
@@ -279,10 +281,11 @@ async function loadConversations() {
         select.value = currentConversationId;
         console.log('Set select value to:', currentConversationId);
         // Load the conversation data
+        console.log('Loading conversation data immediately');
         await loadConversationData();
       } else {
-        console.warn('Select element not found yet, will retry after dropdown is created');
-        // The createDropdownManually function will handle this case
+        console.warn('Select element not found yet, will be handled by createDropdownManually');
+        // The createDropdownManually function will handle loading the conversation
       }
     } else if (conversations.length === 0) {
       console.warn('No conversations found. Create a new conversation to get started.');
@@ -422,20 +425,40 @@ async function createDropdownManually() {
   // Update dropdown with conversations
   updateConversationDropdown();
   
-  // Wait a moment for dropdown to update, then select first conversation
+  // Wait a moment for dropdown to update, then select first conversation and load it
   setTimeout(async () => {
-    // If we have conversations and none selected, select the first one and load it
-    if (conversations.length > 0 && !currentConversationId) {
-      currentConversationId = conversations[0].id;
-      if (select) {
-        select.value = currentConversationId;
-        console.log('Auto-selected first conversation:', currentConversationId);
+    // If we have conversations
+    if (conversations.length > 0) {
+      // If no conversation is selected yet, select the first one
+      if (!currentConversationId) {
+        currentConversationId = conversations[0].id;
+        console.log('No conversation selected, selecting first:', currentConversationId);
+      } else {
+        console.log('Conversation already selected:', currentConversationId);
       }
-      // Load the conversation data
-      console.log('Loading conversation data for:', currentConversationId);
-      await loadConversationData();
+      
+      // Set the select value to match currentConversationId
+      if (select && currentConversationId) {
+        select.value = currentConversationId;
+        console.log('Set select value to conversation:', currentConversationId);
+      }
+      
+      // Always load the conversation data if we have a conversationId
+      if (currentConversationId) {
+        console.log('About to load conversation data for:', currentConversationId);
+        try {
+          await loadConversationData();
+          console.log('Conversation data loaded successfully');
+        } catch (error) {
+          console.error('Error loading conversation data:', error);
+        }
+      } else {
+        console.error('No currentConversationId to load!');
+      }
+    } else {
+      console.warn('No conversations available to load');
     }
-  }, 100);
+  }, 150);
 }
 
 // Load conversation data for the selected conversation
