@@ -1,0 +1,107 @@
+// Conversation script for Recurly Engage setup flow
+const conversation = [
+  {
+    speaker: "AI Agent",
+    message: "Hi! I can help you launch your first involuntary churn remediation campaign using Recurly Engage. This will help you recover subscribers who experience failed payments by showing them in-app prompts to update their payment information. Ready to get started?"
+  },
+  {
+    speaker: "Merchant",
+    message: "Yes! We're losing a lot of subscribers to expired cards. What do we need to do?"
+  },
+  {
+    speaker: "AI Agent",
+    message: "Perfect use case. Let me check your current Recurly setup first...\n[Agent calls Recurly API to check Engage integration status]\nGreat news—I can see Recurly Engage is already integrated with your account. I've found a pre-built \"Failed Payment\" guide that we can customize for your needs.\nBefore we dive in, quick question: Do you want this campaign to target all subscribers with failed payments, or would you like to start with a specific subscription plan?"
+  },
+  {
+    speaker: "Merchant",
+    message: "Let's start with all failed payments to maximize recovery."
+  },
+  {
+    speaker: "AI Agent",
+    message: "Smart approach. Here's what we're going to publish:\n\nCampaign Overview:\nName: Failed Payment Recovery Campaign\nTarget: All active subscribers with failed payment attempts\nTrigger: Appears when subscriber logs in after a payment failure\nFlow: Single-prompt overlay asking them to update their payment method with a 1-click fix\nExpected Impact: Industry average shows 15-25% recovery rate for failed payments with in-app prompts\n\nDoes this sound right for your first campaign?"
+  },
+  {
+    speaker: "Merchant",
+    message: "Yes, that works. What about the messaging? Can I customize what they see?"
+  },
+  {
+    speaker: "AI Agent",
+    message: "Absolutely! Let me pull up the current default message...\n[Agent fetches current prompt configuration]\nHere's what subscribers will see right now:\n\nCurrent Prompt Message:\nHeadline: \"Payment Update Needed\"\nBody: \"We had trouble processing your payment. Please update your payment method to continue enjoying uninterrupted service.\"\nPrimary Button: \"Update Payment Method\" Secondary Button: \"Remind Me Later\"\n\nWould you like to edit this message to match your brand voice better? I can help you revise the copy."
+  },
+  {
+    speaker: "Merchant",
+    message: "Yeah, that feels a bit formal for our brand. Can we make it friendlier?"
+  },
+  {
+    speaker: "AI Agent",
+    message: "Definitely. What if we tried something like this:\n\nRevised Prompt:\nHeadline: \"Uh oh! Your payment didn't go through\"\nBody: \"No worries—it happens! Your card may have expired or there might be a temporary issue. Update your payment info in just one click and you're all set.\"\nPrimary Button: \"Fix It Now\" Secondary Button: \"Remind Me Later\"\n\nHow does that feel?"
+  },
+  {
+    speaker: "Merchant",
+    message: "Much better! I like \"Fix It Now.\" Can we use that?"
+  },
+  {
+    speaker: "AI Agent",
+    message: "Perfect! Let me update that...\n[Agent updates prompt configuration via Engage API]\n✓ Prompt message updated successfully.\n\nNow, let's configure the behavior when subscribers click \"Fix It Now.\" Currently it's set to open a new tab to your account management page. Since you have Recurly's Hosted Account Management, we can make this even smoother—they'll go directly to the payment update section. Should we keep it that way or would you prefer a different behavior?"
+  },
+  {
+    speaker: "Merchant",
+    message: "Direct to payment update sounds perfect. What happens if they click \"Remind Me Later\"?"
+  },
+  {
+    speaker: "AI Agent",
+    message: "Good question. Right now, \"Remind Me Later\" will dismiss the prompt, and it won't show again for 24 hours. We can adjust this window—anywhere from 4 hours to 7 days. What makes sense for your business?"
+  },
+  {
+    speaker: "Merchant",
+    message: "24 hours is fine. We don't want to annoy them but we also need them to fix it quickly."
+  },
+  {
+    speaker: "AI Agent",
+    message: "That's a good balance. Okay, let me show you what we're about to publish:\n\nCampaign Summary:\nCampaign Name: Failed Payment Recovery Campaign\n Status: Ready to Activate\nTargeting:\nSegment: \"Members with Failed Payment\" (automatically maintained by Recurly)\nDevice: Desktop & Mobile Web\nEstimated Reach: ~150 subscribers currently in dunning\nPrompt Configuration:\nType: Pop-up Overlay (blocks interaction until action taken)\nPosition: Center screen\nTiming: Shows on first page load after login\nFrequency: Once per day until payment is resolved\nMessage:\nHeadline: \"Uh oh! Your payment didn't go through\"\nBody: \"No worries—it happens! Your card may have expired or there might be a temporary issue. Update your payment info in just one click and you're all set.\"\nPrimary CTA: \"Fix It Now\" → Routes to Hosted Account Management payment page\nSecondary CTA: \"Remind Me Later\" → Dismisses for 24 hours\nIntegration:\nConnected to: Recurly billing system\nAuto-removes: Subscribers automatically exit segment once payment succeeds\nRetry coordination: Works alongside your Intelligent Retry settings\nAnalytics:\nDashboard: Real-time tracking of impressions, clicks, and recovery rate\nSuccess metric: Payment method updates and successful retry attempts\n\nThis will start working immediately once activated. Want to test it first before going live?"
+  },
+  {
+    speaker: "Merchant",
+    message: "Yes, definitely want to test it. How do we do that?"
+  },
+  {
+    speaker: "AI Agent",
+    message: "Great call. Let me set you up in the Test Users segment...\n[Agent configures test user segment]\nI've added your account to the Test Users segment. Here's how to test:\nI can trigger a simulated \"failed payment\" state on your test account\nLog into your app/website\nYou'll see the prompt appear exactly as your subscribers will\nClick through both buttons to test the flows\n\nWant me to set that up now?"
+  },
+  {
+    speaker: "Merchant",
+    message: "Yes, let's test it."
+  },
+  {
+    speaker: "AI Agent",
+    message: "[Agent creates test failed payment scenario]\n✓ Test scenario created. Your account now shows as having a failed payment.\n\nGo ahead and visit your app—you should see the prompt within a few seconds. Let me know what you think!"
+  },
+  {
+    speaker: "Merchant",
+    message: "[tests the flow] Okay, I see it! Looks good. When I click \"Fix It Now\" it takes me right to the payment method page. Perfect. How do I launch this for real?"
+  },
+  {
+    speaker: "AI Agent",
+    message: "Excellent! Glad the testing worked smoothly. Now I just need your approval to activate the campaign for all subscribers with failed payments.\n\nOnce activated:\nThe prompt will show to ~150 subscribers currently in dunning status\nNew failed payments will automatically enter the segment\nYou'll start seeing recovery metrics within 24 hours\nYou can pause or adjust the campaign anytime through your Recurly Engage dashboard\n\nShould I activate the \"Failed Payment Recovery Campaign\" now?"
+  },
+  {
+    speaker: "Merchant",
+    message: "Yes, let's launch it!"
+  },
+  {
+    speaker: "AI Agent",
+    message: "[Agent activates campaign via Engage API]\n🎉 Campaign Activated Successfully!\n\nYour Failed Payment Recovery Campaign is now live. Here's what to expect:\n\nNext 24 Hours:\nSubscribers with failed payments will start seeing your prompt\nYou'll receive your first performance metrics\nWatch for payment method updates in your Recurly dashboard\n\nWeek 1:\nAim for 15-25% of prompted subscribers to update payment methods\nMonitor your dunning recovery rate improvements\nIndustry benchmark: This typically recovers $X,XXX in MRR for accounts your size\n\nMonitoring:\nDashboard: recurly.com/engage/campaigns/failed-payment-recovery\nKey metrics: Impression rate, Click-through rate, Payment update rate\nEmail alerts: I'll notify you of any issues or if recovery rate drops below 10%\n\nPro Tips:\nConsider adding a second prompt at day 3 of dunning with a more urgent tone\nTest offering a discount code for subscribers who've been in dunning >7 days\nReview performance after 2 weeks to optimize messaging\n\nWant me to set up a follow-up review in one week to assess performance?"
+  },
+  {
+    speaker: "Merchant",
+    message: "Yes, that would be helpful. Thanks for walking me through this!"
+  },
+  {
+    speaker: "AI Agent",
+    message: "You're welcome! I've scheduled a check-in for next Monday. In the meantime, you can monitor real-time performance in your Engage dashboard, and I'm here if you want to make any adjustments. Good luck with the campaign! 📈"
+  }
+];
+
+module.exports = conversation;
+
+
