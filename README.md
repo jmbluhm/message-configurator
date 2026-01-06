@@ -9,25 +9,68 @@ A simple Node.js web application that simulates the Recurly Engage setup convers
 - **Scripted Responses**: AI Agent always responds with the next message from the script, regardless of user input
 - **Visual Distinction**: AI and Merchant messages are styled differently for clarity
 - **System Notes Panel**: Separate panel showing system actions (API calls, data operations) extracted from messages
-- **CSV-Based Configuration**: Conversation flow is stored in CSV format for easy editing
+- **Database-Backed Storage**: Conversation flow is stored in Supabase PostgreSQL database
 - **Built-in Editor**: Table editor to modify conversation flow directly in the app
+- **Password Protection**: Simple password authentication to protect access to the application
 
 ## Setup
 
-1. Install dependencies:
+### Prerequisites
+
+- Node.js installed
+- A Supabase account and project
+- Supabase database with the conversation table created (see Database Setup below)
+
+### Database Setup
+
+1. **Create Supabase Project**: Go to [supabase.com](https://supabase.com) and create a new project
+
+2. **Run SQL Schema**: In your Supabase SQL Editor, run the contents of `supabase_schema.sql`:
+   ```sql
+   -- See supabase_schema.sql file for the complete schema
+   ```
+
+3. **Migrate Data** (optional): If you have existing CSV data, run `supabase_migrate_data.sql` in the SQL Editor to import it
+
+4. **Get Credentials**: 
+   - Go to Project Settings → API
+   - Copy your `Project URL` (SUPABASE_URL)
+   - Copy your `anon public` key (SUPABASE_ANON_KEY)
+
+### Local Development Setup
+
+1. **Install dependencies**:
 ```bash
 npm install
 ```
 
-2. Start the server:
+2. **Create `.env` file** in the project root:
+```env
+ACCESS_PASSWORD=yourpasswordhere
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-anon-key-here
+```
+
+3. **Start the server**:
 ```bash
 npm start
 ```
 
-3. Open your browser and navigate to:
+4. **Open your browser** and navigate to:
 ```
 http://localhost:3000
 ```
+
+5. **Enter password** when prompted (use the password from your `.env` file)
+
+### Vercel Deployment
+
+1. **Add Environment Variables** in Vercel:
+   - `ACCESS_PASSWORD`: Your access password
+   - `SUPABASE_URL`: Your Supabase project URL
+   - `SUPABASE_ANON_KEY`: Your Supabase anon key
+
+2. **Deploy**: Push to your connected Git repository or use Vercel CLI
 
 ## Usage
 
@@ -42,41 +85,42 @@ http://localhost:3000
 
 ```
 message_sim_engage/
-├── package.json          # Node.js dependencies
-├── server.js             # Express server with API endpoints
-├── conversation.csv      # Conversation flow data (CSV format)
-├── script.js             # Legacy conversation script (deprecated)
-├── public/               # Static files
-│   ├── index.html        # Main chat interface
-│   ├── styles.css        # Chat UI styling
-│   └── app.js            # Frontend chat logic
-└── README.md             # This file
+├── package.json              # Node.js dependencies
+├── server.js                 # Express server with API endpoints
+├── conversation.csv          # Legacy CSV file (now using database)
+├── supabase_schema.sql       # Database schema SQL
+├── supabase_migrate_data.sql # Data migration SQL
+├── script.js                 # Legacy conversation script (deprecated)
+├── public/                   # Static files
+│   ├── index.html            # Main chat interface
+│   ├── styles.css            # Chat UI styling
+│   └── app.js                # Frontend chat logic
+└── README.md                 # This file
 ```
 
-## CSV Format
+## Database Schema
 
-The conversation flow is stored in `conversation.csv` with the following columns:
+The conversation flow is stored in a PostgreSQL database table with the following structure:
 
+- **id**: Primary key (auto-increment)
 - **turn**: Sequential turn number (1, 2, 3, ...)
 - **speaker**: Either "AI Agent" or "Merchant"
-- **message**: The message text (supports newlines using `\n`, markdown, structured blocks)
-- **system_actions**: Comma-separated list of system actions (e.g., "Agent calls API, Agent fetches config")
-- **auto_fill**: "true" or "false" - whether merchant message should be auto-filled
+- **message**: The message text (supports newlines, markdown, structured blocks)
+- **system_actions**: System actions in bracket syntax (e.g., "[Action 1],[Action 2]")
+- **created_at**: Timestamp when record was created
+- **updated_at**: Timestamp when record was last updated
 
-### CSV Format Examples
+### System Actions Format
 
-```csv
-turn,speaker,message,system_actions,auto_fill
-1,AI Agent,"Hello! How can I help?",,true
-2,Merchant,"I need help with setup.",,false
-3,AI Agent,"Let me check your settings...\n\nHere's what I found.","Agent calls API to check settings",true
-```
+System actions use bracket syntax where commas inside brackets are preserved:
+- `[Action 1, with comma],[Action 2]` → Two actions: "Action 1, with comma" and "Action 2"
+- Commas outside brackets separate different actions
+- Empty system_actions are stored as NULL
 
 **Notes:**
-- Messages with newlines should use `\n` (will be converted to actual newlines)
-- System actions are comma-separated (e.g., "Action 1, Action 2, Action 3")
-- Empty cells are allowed (use empty string `""`)
-- Structured blocks (like "Campaign Overview:") are supported in message text
+- Messages support newlines (stored as actual newlines in database)
+- System actions use bracket syntax for complex actions with commas
+- The database automatically tracks created_at and updated_at timestamps
 
 ## Conversation Editor
 
@@ -90,25 +134,39 @@ The app includes a built-in table editor to modify the conversation flow:
 6. **Reload**: Click "↻ Reload" to reload from CSV (discards unsaved changes)
 
 The editor allows you to:
-- Modify message text, speaker, system actions, and auto-fill settings
+- Modify message text, speaker, and system actions
 - Add new conversation turns
 - Delete existing turns
 - Reorder turns (by editing turn numbers)
 
-After saving, the conversation will reload and you can test the new flow by clicking "Reset".
+After saving, the conversation will reload from the database and you can test the new flow by clicking "Reset".
 
 ## API Endpoints
 
+- `POST /api/auth`: Authenticates user with password (sets session cookie)
 - `POST /api/next-message`: Returns the next AI Agent message, Merchant message, and system actions
 - `POST /api/reset`: Resets the conversation to the beginning
-- `GET /api/conversation`: Returns the full conversation data as JSON
-- `POST /api/conversation`: Saves conversation data to CSV
+- `GET /api/conversation`: Returns the full conversation data as JSON from database
+- `POST /api/conversation`: Saves conversation data to database
+
+## Environment Variables
+
+Required environment variables:
+
+- `ACCESS_PASSWORD`: Password required to access the application
+- `SUPABASE_URL`: Your Supabase project URL (e.g., `https://xxxxx.supabase.co`)
+- `SUPABASE_ANON_KEY`: Your Supabase anon/public key
+
+Optional:
+- `NODE_ENV`: Set to `production` for production deployments (enables secure cookies)
 
 ## Notes
 
 - The conversation state is maintained in-memory on the server and resets when the server restarts
+- Conversation data is persisted in Supabase PostgreSQL database
 - The app always responds with the next AI message in sequence, regardless of what the user types
 - Merchant messages are pre-filled but can be edited before sending
 - System actions are automatically extracted and displayed in the System Notes panel
-- Changes to the CSV file require a server restart or using the built-in editor's save function
+- Changes are saved directly to the database and take effect immediately
+- Password authentication uses httpOnly cookies for security
 

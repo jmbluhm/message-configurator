@@ -3,17 +3,25 @@ require('dotenv').config();
 
 const express = require('express');
 const path = require('path');
-const fs = require('fs');
-const csv = require('csv-parser');
-const createCsvWriter = require('csv-writer').createObjectCsvWriter;
+const { createClient } = require('@supabase/supabase-js');
 const cookieParser = require('cookie-parser');
 const crypto = require('crypto');
 
 const app = express();
 const PORT = 3000;
-const CSV_PATH = path.join(__dirname, 'conversation.csv');
 const ACCESS_PASSWORD = process.env.ACCESS_PASSWORD || '';
 const COOKIE_SECRET = process.env.COOKIE_SECRET || crypto.randomBytes(32).toString('hex');
+
+// Initialize Supabase client
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  console.error('Error: SUPABASE_URL and SUPABASE_ANON_KEY must be set in environment variables');
+  process.exit(1);
+}
+
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Parse cookies
 app.use(cookieParser());
@@ -74,7 +82,7 @@ app.use(requireAuth);
 // Serve static files from public directory
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Load conversation from CSV
+// Load conversation from database
 let conversation = [];
 let conversationLoaded = false;
 
@@ -138,41 +146,32 @@ function formatSystemActions(actions) {
   }).join(',');
 }
 
-function loadConversation() {
-  return new Promise((resolve, reject) => {
-    conversation = [];
-    const results = [];
+async function loadConversation() {
+  try {
+    const { data, error } = await supabase
+      .from('conversation')
+      .select('*')
+      .order('turn', { ascending: true });
     
-    if (!fs.existsSync(CSV_PATH)) {
-      console.error(`CSV file not found: ${CSV_PATH}`);
-      reject(new Error('CSV file not found'));
-      return;
+    if (error) {
+      throw error;
     }
     
-    fs.createReadStream(CSV_PATH)
-      .pipe(csv())
-      .on('data', (data) => {
-        results.push(data);
-      })
-      .on('end', () => {
-        // Convert CSV rows to conversation format
-        conversation = results
-          .filter(row => row.speaker && row.message) // Filter out empty/invalid rows
-          .map(row => ({
-            speaker: row.speaker,
-            message: (row.message || '').replace(/\\n/g, '\n'), // Convert \n to actual newlines
-            systemActions: parseSystemActions(row.system_actions || '')
-          }));
-        
-        conversationLoaded = true;
-        console.log(`Loaded ${conversation.length} messages from CSV`);
-        resolve();
-      })
-      .on('error', (error) => {
-        console.error('Error reading CSV:', error);
-        reject(error);
-      });
-  });
+    // Convert database rows to conversation format
+    conversation = (data || [])
+      .filter(row => row.speaker && row.message) // Filter out empty/invalid rows
+      .map(row => ({
+        speaker: row.speaker,
+        message: row.message || '',
+        systemActions: parseSystemActions(row.system_actions || '')
+      }));
+    
+    conversationLoaded = true;
+    console.log(`Loaded ${conversation.length} messages from database`);
+  } catch (error) {
+    console.error('Error loading conversation from database:', error);
+    throw error;
+  }
 }
 
 // Track conversation state (in-memory, resets on server restart)
@@ -257,44 +256,54 @@ app.get('/api/conversation', async (req, res) => {
   res.json(conversationData);
 });
 
-// Save conversation CSV
+// Save conversation to database
 app.post('/api/conversation', async (req, res) => {
   try {
     const conversationData = req.body;
     
-    // Convert to CSV format
-    const csvWriter = createCsvWriter({
-      path: CSV_PATH,
-      header: [
-        { id: 'turn', title: 'turn' },
-        { id: 'speaker', title: 'speaker' },
-        { id: 'message', title: 'message' },
-        { id: 'system_actions', title: 'system_actions' }
-      ]
-    });
-    
-    // Prepare data for CSV (convert newlines to \n for CSV)
+    // Prepare data for database
     // Parse and reformat system_actions to ensure proper bracket syntax
-    const csvData = conversationData.map(row => {
+    const dbData = conversationData.map(row => {
       const systemActions = parseSystemActions(row.system_actions || '');
       return {
-        turn: row.turn || '',
+        turn: parseInt(row.turn) || null,
         speaker: row.speaker || '',
-        message: (row.message || '').replace(/\n/g, '\\n'),
-        system_actions: formatSystemActions(systemActions)
+        message: row.message || '',
+        system_actions: formatSystemActions(systemActions) || null
       };
     });
     
-    await csvWriter.writeRecords(csvData);
+    // Delete all existing records and insert new ones
+    // Using upsert with a unique constraint on turn would be better, but for simplicity
+    // we'll delete and reinsert
+    const { error: deleteError } = await supabase
+      .from('conversation')
+      .delete()
+      .gte('id', 0); // Delete all records (gte 'id', 0 is always true)
+    
+    if (deleteError) {
+      throw deleteError;
+    }
+    
+    // Insert new records
+    const { data, error: insertError } = await supabase
+      .from('conversation')
+      .insert(dbData)
+      .select();
+    
+    if (insertError) {
+      throw insertError;
+    }
     
     // Reload conversation
     await loadConversation();
     currentIndex = 0; // Reset conversation state
     
-    res.json({ message: 'Conversation saved successfully', count: csvData.length });
+    res.json({ message: 'Conversation saved successfully', count: dbData.length });
   } catch (error) {
     console.error('Error saving conversation:', error);
-    res.status(500).json({ error: 'Failed to save conversation' });
+    const errorMessage = error.message || 'Failed to save conversation';
+    res.status(500).json({ error: `Failed to save conversation: ${errorMessage}` });
   }
 });
 

@@ -100,7 +100,8 @@ async function checkAuthentication() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-      }
+      },
+      credentials: 'include'
     });
     
     if (response.ok || response.status === 200) {
@@ -196,7 +197,8 @@ async function initializeApp() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-      }
+      },
+      credentials: 'include'
     });
   } catch (error) {
     console.error('Error resetting conversation on page load:', error);
@@ -279,7 +281,8 @@ async function sendMessage(userMessage, isInitial = false) {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ message: userMessage })
+      body: JSON.stringify({ message: userMessage }),
+      credentials: 'include'
     });
 
     const data = await response.json();
@@ -885,7 +888,8 @@ async function saveMessageEdit(messageDiv, dataIndex, newMessage) {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(sortedData)
+      body: JSON.stringify(sortedData),
+      credentials: 'include'
     });
     
     const result = await response.json();
@@ -1091,7 +1095,8 @@ async function saveSystemActionEdit(actionDiv, conversationDataIndex, actionInde
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(sortedData)
+        body: JSON.stringify(sortedData),
+        credentials: 'include'
       });
       
       const result = await response.json();
@@ -1148,7 +1153,8 @@ async function saveSystemActionEdit(actionDiv, conversationDataIndex, actionInde
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(sortedData)
+      body: JSON.stringify(sortedData),
+      credentials: 'include'
     });
     
     const result = await response.json();
@@ -1216,7 +1222,8 @@ async function deleteSystemAction(actionDiv, conversationDataIndex, actionIndex)
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(sortedData)
+        body: JSON.stringify(sortedData),
+        credentials: 'include'
       });
       
       const result = await response.json();
@@ -1371,7 +1378,8 @@ async function resetConversation() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-      }
+      },
+      credentials: 'include'
     });
 
     // Clear all messages from UI
@@ -1442,7 +1450,9 @@ let conversationData = [];
 // Load conversation data into editor
 async function loadConversationEditor() {
   try {
-    const response = await fetch('/api/conversation');
+    const response = await fetch('/api/conversation', {
+      credentials: 'include'
+    });
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       throw new Error(errorData.error || `HTTP ${response.status}`);
@@ -1754,7 +1764,8 @@ async function saveConversation() {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(sortedData)
+      body: JSON.stringify(sortedData),
+      credentials: 'include'
     });
     
     const result = await response.json();
