@@ -25,21 +25,59 @@ let newConversationName = null;
 let cancelCreateConversation = null;
 let createConversationError = null;
 
+// Helper function to get conversation elements (with retry)
+function getConversationElement(id) {
+  let element = document.getElementById(id);
+  if (!element) {
+    // Try querying from appContainer
+    const appContainer = document.getElementById('appContainer');
+    if (appContainer) {
+      element = appContainer.querySelector(`#${id}`);
+    }
+  }
+  return element;
+}
+
 // Initialize conversation UI elements
 function initConversationElements() {
-  conversationSelect = document.getElementById('conversationSelect');
-  createConversationButton = document.getElementById('createConversationButton');
-  createConversationModal = document.getElementById('createConversationModal');
-  createConversationForm = document.getElementById('createConversationForm');
-  newConversationName = document.getElementById('newConversationName');
-  cancelCreateConversation = document.getElementById('cancelCreateConversation');
-  createConversationError = document.getElementById('createConversationError');
+  conversationSelect = getConversationElement('conversationSelect');
+  createConversationButton = getConversationElement('createConversationButton');
+  createConversationModal = getConversationElement('createConversationModal');
+  createConversationForm = getConversationElement('createConversationForm');
+  newConversationName = getConversationElement('newConversationName');
+  cancelCreateConversation = getConversationElement('cancelCreateConversation');
+  createConversationError = getConversationElement('createConversationError');
   
   console.log('Initialized conversation elements:', {
     conversationSelect: !!conversationSelect,
     createConversationButton: !!createConversationButton,
-    createConversationModal: !!createConversationModal
+    createConversationModal: !!createConversationModal,
+    appContainer: !!document.getElementById('appContainer'),
+    appContainerDisplay: document.getElementById('appContainer')?.style.display
   });
+  
+  // If elements still not found after a delay, try again (for timing issues)
+  if (!conversationSelect) {
+    setTimeout(() => {
+      conversationSelect = getConversationElement('conversationSelect');
+      createConversationButton = getConversationElement('createConversationButton');
+      createConversationModal = getConversationElement('createConversationModal');
+      createConversationForm = getConversationElement('createConversationForm');
+      newConversationName = getConversationElement('newConversationName');
+      cancelCreateConversation = getConversationElement('cancelCreateConversation');
+      createConversationError = getConversationElement('createConversationError');
+      
+      console.log('Retried after delay:', {
+        conversationSelect: !!conversationSelect,
+        createConversationButton: !!createConversationButton,
+        createConversationModal: !!createConversationModal
+      });
+      
+      if (conversationSelect || createConversationButton) {
+        setupConversationHandlers();
+      }
+    }, 200);
+  }
 }
 
 let isWaitingForResponse = false;
@@ -262,8 +300,22 @@ async function loadConversations() {
 
 // Update conversation dropdown
 function updateConversationDropdown() {
+  // Try to get element if not already set
   if (!conversationSelect) {
-    console.error('conversationSelect element not found');
+    conversationSelect = getConversationElement('conversationSelect');
+  }
+  
+  if (!conversationSelect) {
+    console.error('conversationSelect element not found, retrying...');
+    // Try one more time after a short delay
+    setTimeout(() => {
+      conversationSelect = getConversationElement('conversationSelect');
+      if (conversationSelect) {
+        updateConversationDropdown();
+      } else {
+        console.error('conversationSelect still not found after retry');
+      }
+    }, 100);
     return;
   }
   
@@ -343,9 +395,6 @@ async function loadConversationData() {
 async function initializeApp() {
   console.log('Initializing app...');
   
-  // Initialize conversation UI elements
-  initConversationElements();
-  
   // Set up auto-resize for message input
   if (messageInput) {
     messageInput.addEventListener('input', () => {
@@ -353,11 +402,18 @@ async function initializeApp() {
     });
   }
   
-  // Set up conversation event handlers
-  setupConversationHandlers();
-  
-  // Load conversations first - this will also load the first conversation if available
-  await loadConversations();
+  // Initialize conversation UI elements
+  // Use requestAnimationFrame to ensure DOM is ready after showApp()
+  requestAnimationFrame(() => {
+    initConversationElements();
+    
+    // Set up handlers after a brief delay
+    setTimeout(() => {
+      setupConversationHandlers();
+      // Load conversations
+      loadConversations();
+    }, 100);
+  });
 }
 
 // Set up conversation event handlers
