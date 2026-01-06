@@ -1,3 +1,10 @@
+// Authentication elements
+const passwordOverlay = document.getElementById('passwordOverlay');
+const appContainer = document.getElementById('appContainer');
+const passwordForm = document.getElementById('passwordForm');
+const passwordInput = document.getElementById('passwordInput');
+const passwordError = document.getElementById('passwordError');
+
 const chatMessages = document.getElementById('chatMessages');
 const systemNotes = document.getElementById('systemNotes');
 const messageInput = document.getElementById('messageInput');
@@ -85,8 +92,104 @@ function autoResizeTextarea(textarea) {
   textarea.style.overflowY = scrollHeight > maxHeight ? 'auto' : 'hidden';
 }
 
-// Initialize: Load editor and show first AI message
-window.addEventListener('DOMContentLoaded', async () => {
+// Authentication functions
+async function checkAuthentication() {
+  try {
+    // Try to access a protected endpoint to check if authenticated
+    const response = await fetch('/api/reset', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
+    
+    if (response.ok || response.status === 200) {
+      return true;
+    } else if (response.status === 401) {
+      return false;
+    }
+    // If there's an error, assume not authenticated
+    return false;
+  } catch (error) {
+    // Network error or other issue - assume not authenticated
+    return false;
+  }
+}
+
+async function authenticate(password) {
+  try {
+    const response = await fetch('/api/auth', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ password }),
+      credentials: 'include' // Include cookies
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      if (data.success) {
+        return true;
+      }
+    }
+    
+    const errorData = await response.json();
+    throw new Error(errorData.error || 'Authentication failed');
+  } catch (error) {
+    throw error;
+  }
+}
+
+function showApp() {
+  if (passwordOverlay) passwordOverlay.style.display = 'none';
+  if (appContainer) appContainer.style.display = 'flex';
+}
+
+function showPasswordPrompt() {
+  if (passwordOverlay) passwordOverlay.style.display = 'flex';
+  if (appContainer) appContainer.style.display = 'none';
+  if (passwordInput) passwordInput.focus();
+}
+
+// Handle password form submission
+if (passwordForm) {
+  passwordForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const password = passwordInput.value;
+    if (!password) {
+      return;
+    }
+    
+    // Clear previous error
+    if (passwordError) {
+      passwordError.style.display = 'none';
+      passwordError.textContent = '';
+    }
+    
+    try {
+      await authenticate(password);
+      // Authentication successful
+      showApp();
+      // Initialize the app
+      initializeApp();
+    } catch (error) {
+      // Show error message
+      if (passwordError) {
+        passwordError.textContent = error.message || 'Invalid password. Please try again.';
+        passwordError.style.display = 'block';
+      }
+      if (passwordInput) {
+        passwordInput.value = '';
+        passwordInput.focus();
+      }
+    }
+  });
+}
+
+// Initialize app (moved from DOMContentLoaded)
+async function initializeApp() {
   // Reset conversation state on page load
   try {
     await fetch('/api/reset', {
@@ -137,6 +240,18 @@ window.addEventListener('DOMContentLoaded', async () => {
   
   // Send empty message to trigger first AI response
   sendMessage('', true);
+}
+
+// Initialize: Check authentication and load app
+window.addEventListener('DOMContentLoaded', async () => {
+  const isAuthenticated = await checkAuthentication();
+  
+  if (isAuthenticated) {
+    showApp();
+    initializeApp();
+  } else {
+    showPasswordPrompt();
+  }
 });
 
 // Send message function

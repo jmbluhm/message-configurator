@@ -1,18 +1,78 @@
+// Load environment variables
+require('dotenv').config();
+
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const csv = require('csv-parser');
 const createCsvWriter = require('csv-writer').createObjectCsvWriter;
+const cookieParser = require('cookie-parser');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = 3000;
 const CSV_PATH = path.join(__dirname, 'conversation.csv');
+const ACCESS_PASSWORD = process.env.ACCESS_PASSWORD || '';
+const COOKIE_SECRET = process.env.COOKIE_SECRET || crypto.randomBytes(32).toString('hex');
 
-// Serve static files from public directory
-app.use(express.static(path.join(__dirname, 'public')));
+// Parse cookies
+app.use(cookieParser());
 
 // Parse JSON bodies
 app.use(express.json());
+
+// Authentication middleware
+function requireAuth(req, res, next) {
+  // Allow /api/auth endpoint without authentication
+  if (req.path === '/api/auth') {
+    return next();
+  }
+  
+  // Check if user is authenticated via cookie
+  const authCookie = req.cookies.authenticated;
+  if (authCookie === 'true') {
+    return next();
+  }
+  
+  // If requesting an API endpoint, return 401
+  if (req.path.startsWith('/api/')) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  // For static files, serve a simple HTML page that redirects to password prompt
+  // This will be handled by the frontend
+  return next();
+}
+
+// Authentication endpoint
+app.post('/api/auth', (req, res) => {
+  const { password } = req.body;
+  
+  if (!ACCESS_PASSWORD) {
+    return res.status(500).json({ error: 'Access password not configured' });
+  }
+  
+  if (password === ACCESS_PASSWORD) {
+    // Set authenticated cookie
+    // httpOnly: true for security, secure: true in production (HTTPS only)
+    const isProduction = process.env.NODE_ENV === 'production';
+    res.cookie('authenticated', 'true', {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+    return res.json({ success: true });
+  } else {
+    return res.status(401).json({ error: 'Invalid password' });
+  }
+});
+
+// Apply authentication middleware before serving static files
+app.use(requireAuth);
+
+// Serve static files from public directory
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Load conversation from CSV
 let conversation = [];
