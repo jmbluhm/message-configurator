@@ -271,22 +271,18 @@ async function loadConversations() {
     // If there are conversations and none is selected, select the first one
     if (conversations.length > 0 && !currentConversationId) {
       currentConversationId = conversations[0].id;
+      console.log('Auto-selecting first conversation:', currentConversationId);
+      
       // Query select element fresh and set value
       const select = getConversationElement('conversationSelect');
       if (select) {
         select.value = currentConversationId;
-        console.log('Selected first conversation:', currentConversationId);
+        console.log('Set select value to:', currentConversationId);
+        // Load the conversation data
         await loadConversationData();
       } else {
-        console.error('Cannot set conversation - select element not found');
-        // Retry after delay
-        setTimeout(async () => {
-          const retrySelect = getConversationElement('conversationSelect');
-          if (retrySelect) {
-            retrySelect.value = currentConversationId;
-            await loadConversationData();
-          }
-        }, 500);
+        console.warn('Select element not found yet, will retry after dropdown is created');
+        // The createDropdownManually function will handle this case
       }
     } else if (conversations.length === 0) {
       console.warn('No conversations found. Create a new conversation to get started.');
@@ -386,9 +382,12 @@ function updateConversationDropdown() {
 }
 
 // Fallback: Create dropdown manually if it doesn't exist
-function createDropdownManually() {
+async function createDropdownManually() {
   const header = document.querySelector('.app-header');
-  if (!header) return;
+  if (!header) {
+    console.error('Cannot create dropdown - header not found');
+    return;
+  }
   
   // Check if selector div exists
   let selectorDiv = header.querySelector('.conversation-selector');
@@ -419,18 +418,38 @@ function createDropdownManually() {
   
   conversationSelect = select;
   console.log('Manually created conversation dropdown');
+  
+  // Update dropdown with conversations
   updateConversationDropdown();
+  
+  // Wait a moment for dropdown to update, then select first conversation
+  setTimeout(async () => {
+    // If we have conversations and none selected, select the first one and load it
+    if (conversations.length > 0 && !currentConversationId) {
+      currentConversationId = conversations[0].id;
+      if (select) {
+        select.value = currentConversationId;
+        console.log('Auto-selected first conversation:', currentConversationId);
+      }
+      // Load the conversation data
+      console.log('Loading conversation data for:', currentConversationId);
+      await loadConversationData();
+    }
+  }, 100);
 }
 
 // Load conversation data for the selected conversation
 async function loadConversationData() {
   if (!currentConversationId) {
+    console.warn('loadConversationData called but no currentConversationId');
     return;
   }
   
+  console.log('Loading conversation data for ID:', currentConversationId);
+  
   // Reset conversation state
   try {
-    await fetch('/api/reset', {
+    const resetResponse = await fetch('/api/reset', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -438,13 +457,16 @@ async function loadConversationData() {
       body: JSON.stringify({ conversationId: currentConversationId }),
       credentials: 'include'
     });
+    if (!resetResponse.ok) {
+      console.error('Failed to reset conversation:', resetResponse.status);
+    }
   } catch (error) {
     console.error('Error resetting conversation:', error);
   }
   
   // Clear UI
-  chatMessages.innerHTML = '';
-  systemNotes.innerHTML = '';
+  if (chatMessages) chatMessages.innerHTML = '';
+  if (systemNotes) systemNotes.innerHTML = '';
   systemActionCounter = 0;
   aiAgentMessageNumber = 0;
   conversationIndex = 0;
@@ -467,11 +489,16 @@ async function loadConversationData() {
   }
   
   // Load conversation editor
-  await loadConversationEditor();
-  updateAddRowButtonText(null);
-  
-  // Send empty message to trigger first AI response
-  sendMessage('', true);
+  try {
+    await loadConversationEditor();
+    updateAddRowButtonText(null);
+    
+    // Send empty message to trigger first AI response
+    console.log('Triggering first AI message');
+    sendMessage('', true);
+  } catch (error) {
+    console.error('Error loading conversation editor:', error);
+  }
 }
 
 // Event handlers are now set up in setupConversationHandlers() function
