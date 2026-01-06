@@ -570,15 +570,39 @@ function setupConversationHandlers() {
     
     // Handle create conversation button click
     appContainer.addEventListener('click', (e) => {
-      if (e.target.id === 'createConversationButton') {
+      // Check if the click is on the button or inside it
+      const button = e.target.closest('#createConversationButton') || 
+                     (e.target.id === 'createConversationButton' ? e.target : null);
+      
+      if (button) {
+        console.log('Create conversation button clicked');
+        e.preventDefault();
+        e.stopPropagation();
+        
         const modal = getConversationElement('createConversationModal');
         const nameInput = getConversationElement('newConversationName');
+        console.log('Modal found:', !!modal, 'Name input found:', !!nameInput);
+        
         if (modal) {
           modal.style.display = 'flex';
+          console.log('Modal displayed');
           if (nameInput) {
             nameInput.value = '';
-            nameInput.focus();
+            // Focus after a brief delay to ensure modal is visible
+            setTimeout(() => {
+              nameInput.focus();
+            }, 50);
           }
+        } else {
+          console.error('Modal not found! Trying to find it...');
+          // Try to find modal using different methods
+          const modalById = document.getElementById('createConversationModal');
+          const modalByQuery = document.querySelector('#createConversationModal');
+          console.log('Modal search results:', {
+            byId: !!modalById,
+            byQuery: !!modalByQuery,
+            inAppContainer: !!appContainer.querySelector('#createConversationModal')
+          });
         }
       }
       
