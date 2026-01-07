@@ -94,7 +94,25 @@
                                         </div>
                                     </div>
                                 </th>
-                                <th>System Actions</th>
+                                <th>
+                                    System Actions
+                                    <span class="info-icon" id="systemActionsInfo" tabindex="0" role="button" aria-label="System actions syntax help">ℹ️</span>
+                                    <div class="tooltip" id="systemActionsTooltip" role="tooltip">
+                                        <div class="tooltip-content">
+                                            <strong>System Actions Syntax</strong>
+                                            <p>Actions are comma-separated and wrapped in brackets. Commas inside brackets are preserved.</p>
+                                            <ul>
+                                                <li><strong>Single action:</strong> <code>[Action name]</code></li>
+                                                <li><strong>Multiple actions:</strong> <code>[Action 1],[Action 2]</code></li>
+                                                <li><strong>Action with comma:</strong> <code>[Action 1, with comma],[Action 2]</code></li>
+                                            </ul>
+                                            <p style="margin-top: var(--spacing-sm); font-size: 0.9em; opacity: 0.9;">
+                                                <strong>Example:</strong><br>
+                                                <code>[Calls API endpoint],[Creates user profile],[Updates database, with transaction]</code>
+                                            </p>
+                                        </div>
+                                    </div>
+                                </th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
