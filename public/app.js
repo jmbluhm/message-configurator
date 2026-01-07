@@ -25,38 +25,42 @@ let newConversationName = null;
 let cancelCreateConversation = null;
 let createConversationError = null;
 
-// Helper function to get conversation elements - query directly each time
+// Cache for frequently accessed DOM elements
+const elementCache = new Map();
+
+// Helper function to get conversation elements - with caching
 function getConversationElement(id) {
-  // Try multiple methods - be more aggressive
+  // Check cache first
+  if (elementCache.has(id)) {
+    const cached = elementCache.get(id);
+    // Verify element still exists in DOM
+    if (cached && document.contains(cached)) {
+      return cached;
+    } else {
+      // Remove stale cache entry
+      elementCache.delete(id);
+    }
+  }
+  
+  // Try getElementById first (fastest)
   let element = document.getElementById(id);
   
   if (!element) {
-    // Try querySelector on document
+    // Try querySelector as fallback
     element = document.querySelector(`#${id}`);
   }
   
-  if (!element) {
-    // Try querying from appContainer
-    const appContainer = document.getElementById('appContainer');
-    if (appContainer) {
-      element = appContainer.querySelector(`#${id}`);
-    }
-  }
-  
-  if (!element) {
-    // Try querying from body
-    element = document.body.querySelector(`#${id}`);
-  }
-  
-  if (!element) {
-    // Last resort - try all elements with that ID
-    const allElements = document.querySelectorAll(`[id="${id}"]`);
-    if (allElements.length > 0) {
-      element = allElements[0];
-    }
+  // Cache the result if found
+  if (element) {
+    elementCache.set(id, element);
   }
   
   return element;
+}
+
+// Clear element cache (useful when DOM structure changes significantly)
+function clearElementCache() {
+  elementCache.clear();
 }
 
 // Initialize conversation UI elements - just set up handlers, query elements when needed
@@ -277,7 +281,7 @@ async function loadConversations() {
     conversations = await response.json();
     console.log('Loaded conversations:', conversations);
     
-    // Force update dropdown - query element fresh
+    // Update dropdown immediately
     updateConversationDropdown();
     
     // If there are conversations and none is selected, select the first one
@@ -287,17 +291,18 @@ async function loadConversations() {
         console.log('Auto-selecting first conversation:', currentConversationId);
       }
       
-      // Query select element fresh and set value
+      // Query select element and set value
       const select = getConversationElement('conversationSelect');
       if (select) {
         select.value = currentConversationId;
         console.log('Set select value to:', currentConversationId);
-        // Load the conversation data
+        // Load the conversation data immediately
         console.log('Loading conversation data immediately');
         await loadConversationData();
       } else {
-        console.warn('Select element not found yet, will be handled by createDropdownManually');
+        console.warn('Select element not found, will be handled by createDropdownManually');
         // The createDropdownManually function will handle loading the conversation
+        await createDropdownManually();
       }
     } else if (conversations.length === 0) {
       console.warn('No conversations found. Create a new conversation to get started.');
@@ -517,40 +522,37 @@ async function createDropdownManually() {
   // Update dropdown with conversations
   updateConversationDropdown();
   
-  // Wait a moment for dropdown to update, then select first conversation and load it
-  setTimeout(async () => {
-    // If we have conversations
-    if (conversations.length > 0) {
-      // If no conversation is selected yet, select the first one
-      if (!currentConversationId) {
-        currentConversationId = conversations[0].id;
-        console.log('No conversation selected, selecting first:', currentConversationId);
-      } else {
-        console.log('Conversation already selected:', currentConversationId);
-      }
-      
-      // Set the select value to match currentConversationId
-      if (select && currentConversationId) {
-        select.value = currentConversationId;
-        console.log('Set select value to conversation:', currentConversationId);
-      }
-      
-      // Always load the conversation data if we have a conversationId
-      if (currentConversationId) {
-        console.log('About to load conversation data for:', currentConversationId);
-        try {
-          await loadConversationData();
-          console.log('Conversation data loaded successfully');
-        } catch (error) {
-          console.error('Error loading conversation data:', error);
-        }
-      } else {
-        console.error('No currentConversationId to load!');
+  // Select first conversation and load it immediately (no delay needed)
+  if (conversations.length > 0) {
+    // If no conversation is selected yet, select the first one
+    if (!currentConversationId) {
+      currentConversationId = conversations[0].id;
+      console.log('No conversation selected, selecting first:', currentConversationId);
+    } else {
+      console.log('Conversation already selected:', currentConversationId);
+    }
+    
+    // Set the select value to match currentConversationId
+    if (select && currentConversationId) {
+      select.value = currentConversationId;
+      console.log('Set select value to conversation:', currentConversationId);
+    }
+    
+    // Always load the conversation data if we have a conversationId
+    if (currentConversationId) {
+      console.log('About to load conversation data for:', currentConversationId);
+      try {
+        await loadConversationData();
+        console.log('Conversation data loaded successfully');
+      } catch (error) {
+        console.error('Error loading conversation data:', error);
       }
     } else {
-      console.warn('No conversations available to load');
+      console.error('No currentConversationId to load!');
     }
-  }, 150);
+  } else {
+    console.warn('No conversations available to load');
+  }
 }
 
 // Load conversation data for the selected conversation
@@ -562,24 +564,7 @@ async function loadConversationData() {
   
   console.log('Loading conversation data for ID:', currentConversationId);
   
-  // Reset conversation state
-  try {
-    const resetResponse = await fetch('/api/reset', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ conversationId: currentConversationId }),
-      credentials: 'include'
-    });
-    if (!resetResponse.ok) {
-      console.error('Failed to reset conversation:', resetResponse.status);
-    }
-  } catch (error) {
-    console.error('Error resetting conversation:', error);
-  }
-  
-  // Clear UI
+  // Clear UI immediately for better perceived performance
   if (chatMessages) chatMessages.innerHTML = '';
   if (systemNotes) systemNotes.innerHTML = '';
   systemActionCounter = 0;
@@ -588,6 +573,9 @@ async function loadConversationData() {
   currentlyEditingMessage = null;
   currentlyEditingSystemAction = null;
   isWaitingForResponse = false;
+  
+  // Clear element cache when switching conversations
+  clearElementCache();
   
   if (messageInput) {
     messageInput.value = '';
@@ -603,16 +591,41 @@ async function loadConversationData() {
     autoFillIndicator.style.display = 'none';
   }
   
-  // Load conversation editor
+  // Parallelize API calls - reset and load conversation editor simultaneously
   try {
-    await loadConversationEditor();
+    const [resetResponse, loadedData] = await Promise.all([
+      fetch('/api/reset', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ conversationId: currentConversationId }),
+        credentials: 'include'
+      }).catch(err => {
+        console.error('Error resetting conversation:', err);
+        return { ok: false };
+      }),
+      loadConversationEditor()
+    ]);
+    
+    if (!resetResponse.ok) {
+      console.error('Failed to reset conversation:', resetResponse.status);
+    }
+    
     updateAddRowButtonText(null);
     
-    // Send empty message to trigger first AI response
-    console.log('Triggering first AI message');
-    sendMessage('', true);
+    // Hydrate UI with existing messages if any
+    if (loadedData && loadedData.length > 0) {
+      hydrateMessagesFromData(loadedData);
+    } else {
+      // Send empty message to trigger first AI response only if no messages exist
+      console.log('No existing messages, triggering first AI message');
+      sendMessage('', true);
+    }
   } catch (error) {
     console.error('Error loading conversation editor:', error);
+    // Fallback: try to trigger first message even on error
+    sendMessage('', true);
   }
 }
 
@@ -632,16 +645,11 @@ async function initializeApp() {
   // Set up conversation handlers immediately (uses event delegation, doesn't need elements)
   setupConversationHandlers();
   
-  // Wait for DOM to be fully ready, then initialize
-  // Use multiple strategies to ensure elements are found
-  setTimeout(() => {
-    initConversationElements();
-    
-    // Load conversations after a delay to ensure DOM is ready
-    setTimeout(() => {
-      loadConversations();
-    }, 200);
-  }, 100);
+  // Initialize elements immediately - DOM should be ready at this point
+  initConversationElements();
+  
+  // Load conversations immediately - no need for delays
+  loadConversations();
 }
 
 // Set up conversation event handlers - query elements directly
@@ -1160,6 +1168,169 @@ function addSystemAction(actionContent, messageCode, conversationDataIndex = -1,
   
   systemNotes.appendChild(actionDiv);
   scrollSystemNotes();
+}
+
+// Bulk hydrate messages from conversation data (optimized for initial load)
+function hydrateMessagesFromData(data) {
+  if (!data || data.length === 0) {
+    return;
+  }
+  
+  console.log('Hydrating', data.length, 'messages');
+  
+  // Reset counters
+  aiAgentMessageNumber = 0;
+  systemActionCounter = 0;
+  conversationIndex = 0;
+  
+  // Use document fragments for efficient DOM manipulation
+  const messagesFragment = document.createDocumentFragment();
+  const systemActionsFragment = document.createDocumentFragment();
+  
+  // Pre-parse all messages to batch DOM operations
+  const messageElements = [];
+  const systemActionElements = [];
+  
+  for (let i = 0; i < data.length; i++) {
+    const row = data[i];
+    const speaker = row.speaker;
+    const message = (row.message || '').replace(/\\n/g, '\n');
+    const systemActions = row.system_actions ? parseSystemActions(row.system_actions) : [];
+    
+    // Create message element
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${speaker.toLowerCase().replace(' ', '-')}`;
+    messageDiv.setAttribute('data-conversation-index', i);
+    
+    // Track AI Agent message numbers
+    let messageCode = null;
+    if (speaker === 'AI Agent') {
+      aiAgentMessageNumber++;
+      messageCode = `${aiAgentMessageNumber}`;
+      messageDiv.setAttribute('data-message-code', messageCode);
+    }
+    
+    // Create speaker div
+    const speakerDiv = document.createElement('div');
+    speakerDiv.className = 'message-speaker';
+    
+    if (speaker === 'AI Agent' && messageCode) {
+      const codeSpan = document.createElement('span');
+      codeSpan.className = 'message-code';
+      codeSpan.textContent = `- ${messageCode}`;
+      codeSpan.style.cursor = 'pointer';
+      codeSpan.title = 'Click to highlight related system actions';
+      codeSpan.addEventListener('click', (e) => {
+        e.stopPropagation();
+        highlightRelatedItems(messageCode);
+      });
+      speakerDiv.appendChild(document.createTextNode(speaker + ' '));
+      speakerDiv.appendChild(codeSpan);
+    } else {
+      speakerDiv.textContent = speaker;
+    }
+    
+    // Create content div
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'message-content';
+    
+    // Parse message
+    const parsed = parseMessage(message, speaker);
+    contentDiv.innerHTML = parsed.html;
+    
+    messageDiv.appendChild(speakerDiv);
+    messageDiv.appendChild(contentDiv);
+    
+    // Add click handler for editing
+    messageDiv.classList.add('message-editable');
+    messageDiv.style.cursor = 'pointer';
+    messageDiv.title = 'Click to edit message';
+    messageDiv.addEventListener('click', (e) => {
+      if (e.target.closest('.message-code') || e.target.closest('.edit-controls')) {
+        return;
+      }
+      enterEditMode(messageDiv, i);
+    });
+    
+    messageElements.push(messageDiv);
+    
+    // Process system actions
+    if (systemActions.length > 0 && messageCode) {
+      systemActions.forEach((action, actionIndex) => {
+        const actionCounter = actionIndex + 1;
+        const actionCode = `${messageCode}.${actionCounter}`;
+        const actionContent = typeof action === 'string' ? action : action;
+        
+        const actionDiv = document.createElement('div');
+        actionDiv.className = 'system-action-item system-action-editable';
+        actionDiv.setAttribute('data-action-id', systemActionCounter++);
+        actionDiv.setAttribute('data-message-code', actionCode);
+        actionDiv.setAttribute('data-conversation-index', i);
+        actionDiv.setAttribute('data-action-index', actionIndex);
+        
+        const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const timeDiv = document.createElement('div');
+        timeDiv.className = 'system-action-time';
+        timeDiv.textContent = timestamp;
+        
+        const codeDiv = document.createElement('div');
+        codeDiv.className = 'system-action-code';
+        codeDiv.textContent = actionCode;
+        codeDiv.style.cursor = 'pointer';
+        codeDiv.title = 'Click to highlight related message';
+        codeDiv.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const baseCode = actionCode.split('.')[0];
+          highlightRelatedItems(baseCode);
+        });
+        
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'system-action-content';
+        const displayContent = actionContent.trim();
+        const strippedContent = (displayContent.startsWith('[') && displayContent.endsWith(']'))
+          ? displayContent.slice(1, -1)
+          : displayContent;
+        contentDiv.textContent = strippedContent;
+        
+        actionDiv.appendChild(timeDiv);
+        actionDiv.appendChild(codeDiv);
+        actionDiv.appendChild(contentDiv);
+        
+        actionDiv.style.cursor = 'pointer';
+        actionDiv.title = 'Click to edit system action';
+        actionDiv.addEventListener('click', (e) => {
+          if (e.target.closest('.system-action-code') || e.target.closest('.edit-controls')) {
+            return;
+          }
+          enterSystemActionEditMode(actionDiv, i, actionIndex);
+        });
+        
+        systemActionElements.push(actionDiv);
+      });
+    }
+  }
+  
+  // Batch append all elements
+  messageElements.forEach(el => messagesFragment.appendChild(el));
+  systemActionElements.forEach(el => systemActionsFragment.appendChild(el));
+  
+  // Single DOM update for messages
+  chatMessages.appendChild(messagesFragment);
+  
+  // Single DOM update for system actions
+  if (systemActionElements.length > 0) {
+    systemNotes.appendChild(systemActionsFragment);
+  }
+  
+  // Update conversation index
+  conversationIndex = data.length;
+  
+  // Scroll to bottom once
+  requestAnimationFrame(() => {
+    scrollToBottom();
+  });
+  
+  console.log('Hydration complete');
 }
 
 // Add message to chat
@@ -2035,7 +2206,7 @@ let conversationData = [];
 // Load conversation data into editor
 async function loadConversationEditor() {
   if (!currentConversationId) {
-    return;
+    return null;
   }
   
   try {
@@ -2048,39 +2219,106 @@ async function loadConversationEditor() {
     }
     conversationData = await response.json();
     conversationIndex = 0; // Reset conversation index when reloading
-    renderConversationTable();
+    
+    // Use requestAnimationFrame for smooth rendering
+    requestAnimationFrame(() => {
+      renderConversationTable();
+    });
+    
+    return conversationData;
   } catch (error) {
     console.error('Error loading conversation:', error);
     const tbody = document.getElementById('conversationTableBody');
     if (tbody) {
       tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; padding: 20px; color: #ff4444;">Error loading conversation: ${error.message}</td></tr>`;
     }
+    return null;
   }
 }
 
-// Render conversation table
+// Render conversation table (optimized with document fragment)
 function renderConversationTable() {
   const tbody = document.getElementById('conversationTableBody');
-  tbody.innerHTML = '';
+  if (!tbody) return;
+  
+  // Use document fragment for efficient batch DOM updates
+  const fragment = document.createDocumentFragment();
+  
+  // Escape HTML to prevent XSS
+  const escapeHtml = (text) => {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  };
   
   conversationData.forEach((row, index) => {
     const tr = document.createElement('tr');
     tr.setAttribute('data-conversation-index', index);
     tr.className = 'conversation-table-row';
-    tr.innerHTML = `
-      <td class="turn-number">${index + 1}</td>
-      <td>
-        <select class="table-input speaker-select" data-index="${index}" data-field="speaker">
-          <option value="AI Agent" ${row.speaker === 'AI Agent' ? 'selected' : ''}>AI Agent</option>
-          <option value="Merchant" ${row.speaker === 'Merchant' ? 'selected' : ''}>Merchant</option>
-        </select>
-      </td>
-      <td><textarea class="table-input message-textarea" data-index="${index}" data-field="message" rows="3">${(row.message || '').replace(/\\n/g, '\n')}</textarea></td>
-      <td><textarea class="table-input actions-textarea" data-index="${index}" data-field="system_actions" rows="3" placeholder="[Action 1, with comma],[Action 2]">${(row.system_actions || '').replace(/\\n/g, '\n')}</textarea></td>
-      <td><button class="delete-row-button" data-index="${index}">🗑️</button></td>
-    `;
-    tbody.appendChild(tr);
+    
+    // Build row HTML more efficiently
+    const turnCell = document.createElement('td');
+    turnCell.className = 'turn-number';
+    turnCell.textContent = index + 1;
+    
+    const speakerCell = document.createElement('td');
+    const speakerSelect = document.createElement('select');
+    speakerSelect.className = 'table-input speaker-select';
+    speakerSelect.setAttribute('data-index', index);
+    speakerSelect.setAttribute('data-field', 'speaker');
+    
+    const aiOption = document.createElement('option');
+    aiOption.value = 'AI Agent';
+    aiOption.textContent = 'AI Agent';
+    if (row.speaker === 'AI Agent') aiOption.selected = true;
+    
+    const merchantOption = document.createElement('option');
+    merchantOption.value = 'Merchant';
+    merchantOption.textContent = 'Merchant';
+    if (row.speaker === 'Merchant') merchantOption.selected = true;
+    
+    speakerSelect.appendChild(aiOption);
+    speakerSelect.appendChild(merchantOption);
+    speakerCell.appendChild(speakerSelect);
+    
+    const messageCell = document.createElement('td');
+    const messageTextarea = document.createElement('textarea');
+    messageTextarea.className = 'table-input message-textarea';
+    messageTextarea.setAttribute('data-index', index);
+    messageTextarea.setAttribute('data-field', 'message');
+    messageTextarea.rows = 3;
+    messageTextarea.value = (row.message || '').replace(/\\n/g, '\n');
+    messageCell.appendChild(messageTextarea);
+    
+    const actionsCell = document.createElement('td');
+    const actionsTextarea = document.createElement('textarea');
+    actionsTextarea.className = 'table-input actions-textarea';
+    actionsTextarea.setAttribute('data-index', index);
+    actionsTextarea.setAttribute('data-field', 'system_actions');
+    actionsTextarea.rows = 3;
+    actionsTextarea.placeholder = '[Action 1, with comma],[Action 2]';
+    actionsTextarea.value = (row.system_actions || '').replace(/\\n/g, '\n');
+    actionsCell.appendChild(actionsTextarea);
+    
+    const deleteCell = document.createElement('td');
+    const deleteButton = document.createElement('button');
+    deleteButton.className = 'delete-row-button';
+    deleteButton.setAttribute('data-index', index);
+    deleteButton.textContent = '🗑️';
+    deleteCell.appendChild(deleteButton);
+    
+    tr.appendChild(turnCell);
+    tr.appendChild(speakerCell);
+    tr.appendChild(messageCell);
+    tr.appendChild(actionsCell);
+    tr.appendChild(deleteCell);
+    
+    fragment.appendChild(tr);
   });
+  
+  // Single DOM update - clear and append all rows at once
+  tbody.innerHTML = '';
+  tbody.appendChild(fragment);
   
   // Add event listeners
   attachTableEventListeners();
