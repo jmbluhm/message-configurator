@@ -463,6 +463,15 @@ body {
     font-size: var(--font-size-xs);
 }
 
+.actions-info {
+    transition: all 0.2s ease;
+}
+
+.actions-info:hover {
+    color: var(--color-primary-hover) !important;
+    text-decoration: underline !important;
+}
+
 .delete-row-button {
     background: var(--color-danger);
     color: var(--color-text-white);
@@ -591,6 +600,12 @@ body {
     background: #fffbf0 !important;
     border: 2px solid var(--color-primary) !important;
     box-shadow: 0 0 0 4px rgba(255, 184, 0, 0.1) !important;
+}
+
+.message-selected {
+    border: 2px solid var(--color-primary) !important;
+    box-shadow: 0 0 0 2px rgba(255, 184, 0, 0.2) !important;
+    border-radius: var(--border-radius-lg);
 }
 
 .message-content {
@@ -1398,4 +1413,29 @@ body {
     display: flex;
     gap: var(--spacing-md);
     justify-content: flex-end;
+}
+
+#actionsModalList {
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-md);
+    padding: var(--spacing-md);
+    background: var(--color-bg-white);
+}
+
+#actionsModalList::-webkit-scrollbar {
+    width: 8px;
+}
+
+#actionsModalList::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: var(--border-radius-sm);
+}
+
+#actionsModalList::-webkit-scrollbar-thumb {
+    background: #c0c0c0;
+    border-radius: var(--border-radius-sm);
+}
+
+#actionsModalList::-webkit-scrollbar-thumb:hover {
+    background: #a0a0a0;
 }

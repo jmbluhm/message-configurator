@@ -78,6 +78,7 @@ let merchantMessageNumber = 0; // Track Merchant message numbers
 let conversationIndex = 0; // Track current position in conversationData
 let currentlyEditingMessage = null; // Track which message is being edited
 let currentlyEditingSystemAction = null; // Track which system action is being edited
+let selectedMessageInConversation = null; // Track selected message in Conversation panel (for adding actions)
 
 // Parse system actions with bracket syntax: [Action 1, with comma],[Action 2]
 // Commas inside brackets are preserved, commas outside brackets separate actions
@@ -517,6 +518,7 @@ async function loadConversationData() {
   conversationIndex = 0;
   currentlyEditingMessage = null;
   currentlyEditingSystemAction = null;
+  selectedMessageInConversation = null; // Clear selected message
   isWaitingForResponse = false;
   
   // Clear element cache when switching conversations
@@ -961,11 +963,14 @@ function extractSystemActions(message, speaker) {
 
 // Parse and style actions in brackets (removing system actions from display)
 function parseMessage(message, speaker) {
+  // Convert literal \n to actual newlines (safety measure)
+  let normalizedMessage = typeof message === 'string' ? message.replace(/\\n/g, '\n') : message;
+  
   // First, extract system actions
-  const systemActions = extractSystemActions(message, speaker);
+  const systemActions = extractSystemActions(normalizedMessage, speaker);
   
   // Remove system actions from the message text
-  let processedMessage = message;
+  let processedMessage = normalizedMessage;
   systemActions.forEach(action => {
     // Replace the action with empty string, handling surrounding newlines
     processedMessage = processedMessage.replace(action.originalMatch, '');
@@ -1198,6 +1203,16 @@ function hydrateMessagesFromData(data) {
       if (e.target.closest('.message-code') || e.target.closest('.edit-controls')) {
         return;
       }
+      
+      // Track selected message for adding actions
+      // Remove previous selection
+      document.querySelectorAll('.message').forEach(msg => {
+        msg.classList.remove('message-selected');
+      });
+      // Add selection to this message
+      messageDiv.classList.add('message-selected');
+      selectedMessageInConversation = messageDiv;
+      
       enterEditMode(messageDiv, i);
     });
     
@@ -1379,8 +1394,11 @@ function addMessage(speaker, message, systemActionsFromAPI = []) {
   const contentDiv = document.createElement('div');
   contentDiv.className = 'message-content';
   
+  // Convert literal \n to actual newlines before parsing
+  const messageForParsing = typeof message === 'string' ? message.replace(/\\n/g, '\n') : message;
+  
   // Parse message to extract system actions and get HTML
-  const parsed = parseMessage(message, speaker);
+  const parsed = parseMessage(messageForParsing, speaker);
   contentDiv.innerHTML = parsed.html;
   
   // Get actions from conversationData if available, otherwise use API or parsed actions
@@ -1448,6 +1466,16 @@ function addMessage(speaker, message, systemActionsFromAPI = []) {
       if (e.target.closest('.message-code') || e.target.closest('.edit-controls')) {
         return;
       }
+      
+      // Track selected message for adding actions
+      // Remove previous selection
+      document.querySelectorAll('.message').forEach(msg => {
+        msg.classList.remove('message-selected');
+      });
+      // Add selection to this message
+      messageDiv.classList.add('message-selected');
+      selectedMessageInConversation = messageDiv;
+      
       enterEditMode(messageDiv, dataIndex);
     });
   }
@@ -1941,65 +1969,296 @@ async function deleteSystemAction(actionDiv, conversationDataIndex, actionIndex)
 
 // Create new action for most recent message (supports both System and User actions)
 function createNewSystemAction() {
-  // Find the most recent message in the conversation (any speaker)
-  let mostRecentMessage = null;
-  let mostRecentMessageIndex = -1;
-  let mostRecentMessageCode = null;
-  let mostRecentSpeaker = null;
+  // First, check if a message is selected in the Conversation panel
+  let targetMessage = null;
+  let targetMessageIndex = -1;
+  let targetMessageCode = null;
+  let targetSpeaker = null;
   
-  // Look through all messages in chat
-  const allMessages = Array.from(chatMessages.querySelectorAll('.message'));
-  for (let i = allMessages.length - 1; i >= 0; i--) {
-    const msg = allMessages[i];
-    const messageCode = msg.getAttribute('data-message-code');
-    const dataIndex = parseInt(msg.getAttribute('data-conversation-index'));
+  if (selectedMessageInConversation) {
+    const dataIndex = parseInt(selectedMessageInConversation.getAttribute('data-conversation-index'));
+    const messageCode = selectedMessageInConversation.getAttribute('data-message-code');
     
     if (messageCode && dataIndex !== -1 && conversationData[dataIndex]) {
-      mostRecentMessage = msg;
-      mostRecentMessageIndex = dataIndex;
-      mostRecentMessageCode = messageCode;
-      mostRecentSpeaker = conversationData[dataIndex].speaker;
-      break;
+      targetMessage = selectedMessageInConversation;
+      targetMessageIndex = dataIndex;
+      targetMessageCode = messageCode;
+      targetSpeaker = conversationData[dataIndex].speaker;
     }
   }
   
-  if (!mostRecentMessage || mostRecentMessageIndex === -1) {
+  // If no message selected, find the most recent message in the conversation (any speaker)
+  if (!targetMessage) {
+    const allMessages = Array.from(chatMessages.querySelectorAll('.message'));
+    for (let i = allMessages.length - 1; i >= 0; i--) {
+      const msg = allMessages[i];
+      const messageCode = msg.getAttribute('data-message-code');
+      const dataIndex = parseInt(msg.getAttribute('data-conversation-index'));
+      
+      if (messageCode && dataIndex !== -1 && conversationData[dataIndex]) {
+        targetMessage = msg;
+        targetMessageIndex = dataIndex;
+        targetMessageCode = messageCode;
+        targetSpeaker = conversationData[dataIndex].speaker;
+        break;
+      }
+    }
+  }
+  
+  if (!targetMessage || targetMessageIndex === -1) {
     alert('No message found. Please wait for a message to be displayed first.');
     return;
   }
   
   // Ensure conversationData has actions array
-  if (!conversationData[mostRecentMessageIndex].actions) {
-    conversationData[mostRecentMessageIndex].actions = [];
+  if (!conversationData[targetMessageIndex].actions) {
+    conversationData[targetMessageIndex].actions = [];
   }
   
   // Count existing actions for this message to determine new action code
   const existingActionsForMessage = Array.from(systemNotes.querySelectorAll('.system-action-item'))
     .filter(action => {
       const actionCode = action.getAttribute('data-message-code');
-      return actionCode && actionCode.startsWith(mostRecentMessageCode + '.');
+      return actionCode && actionCode.startsWith(targetMessageCode + '.');
     });
   
   const newActionNumber = existingActionsForMessage.length + 1;
-  const newActionCode = `${mostRecentMessageCode}.${newActionNumber}`;
+  const newActionCode = `${targetMessageCode}.${newActionNumber}`;
   
   // Add new empty action to conversationData
-  const newActionIndex = conversationData[mostRecentMessageIndex].actions.length;
-  conversationData[mostRecentMessageIndex].actions.push({
+  const newActionIndex = conversationData[targetMessageIndex].actions.length;
+  conversationData[targetMessageIndex].actions.push({
     content: ''
   });
   
   // Determine if this is a system action
-  const isSystemAction = mostRecentSpeaker === 'AI Agent';
+  const isSystemAction = targetSpeaker === 'AI Agent';
   
   // Create and add the action to the UI
-  addSystemAction('', newActionCode, mostRecentMessageIndex, newActionIndex, null, isSystemAction);
+  addSystemAction('', newActionCode, targetMessageIndex, newActionIndex, null, isSystemAction);
   
   // Immediately enter edit mode for the new action
   const newActionDiv = systemNotes.querySelector(`[data-action-id="${systemActionCounter - 1}"]`);
   if (newActionDiv) {
     setTimeout(() => {
-      enterSystemActionEditMode(newActionDiv, mostRecentMessageIndex, newActionIndex);
+      enterSystemActionEditMode(newActionDiv, targetMessageIndex, newActionIndex);
+    }, 100);
+  }
+}
+
+// Show actions modal for a specific row
+function showActionsModal(rowIndex, actionsArray, rowData) {
+  // Create or get modal
+  let modal = document.getElementById('actionsModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'actionsModal';
+    modal.className = 'modal-overlay';
+    modal.style.display = 'none';
+    
+    const modalContent = document.createElement('div');
+    modalContent.className = 'modal-content';
+    modalContent.style.minWidth = '500px';
+    modalContent.style.maxWidth = '700px';
+    
+    const title = document.createElement('h2');
+    title.id = 'actionsModalTitle';
+    modalContent.appendChild(title);
+    
+    const actionsList = document.createElement('div');
+    actionsList.id = 'actionsModalList';
+    actionsList.style.maxHeight = '400px';
+    actionsList.style.overflowY = 'auto';
+    actionsList.style.marginBottom = 'var(--spacing-lg)';
+    modalContent.appendChild(actionsList);
+    
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'modal-actions';
+    
+    const addButton = document.createElement('button');
+    addButton.type = 'button';
+    addButton.className = 'btn btn-primary';
+    addButton.id = 'actionsModalAddButton';
+    addButton.textContent = '+ Add Action';
+    actionsDiv.appendChild(addButton);
+    
+    const closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.className = 'btn btn-secondary';
+    closeButton.id = 'actionsModalCloseButton';
+    closeButton.textContent = 'Close';
+    actionsDiv.appendChild(closeButton);
+    
+    modalContent.appendChild(actionsDiv);
+    modal.appendChild(modalContent);
+    
+    document.body.appendChild(modal);
+    
+    // Close button handler
+    closeButton.addEventListener('click', () => {
+      modal.style.display = 'none';
+    });
+    
+    // Close on overlay click
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        modal.style.display = 'none';
+      }
+    });
+    
+    // Add action button handler
+    addButton.addEventListener('click', () => {
+      modal.style.display = 'none';
+      // Find the corresponding message in conversation panel and add action
+      const messageElement = chatMessages.querySelector(`.message[data-conversation-index="${rowIndex}"]`);
+      if (messageElement) {
+        // Select the message
+        document.querySelectorAll('.message').forEach(msg => {
+          msg.classList.remove('message-selected');
+        });
+        messageElement.classList.add('message-selected');
+        selectedMessageInConversation = messageElement;
+        
+        // Scroll to message
+        messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        
+        // Add action
+        setTimeout(() => {
+          createNewSystemAction();
+        }, 300);
+      } else {
+        // If message not in conversation panel, add action directly
+        createActionForRow(rowIndex);
+      }
+    });
+  }
+  
+  // Update modal content
+  const title = modal.querySelector('#actionsModalTitle');
+  const actionsList = modal.querySelector('#actionsModalList');
+  const addButton = modal.querySelector('#actionsModalAddButton');
+  
+  const speaker = rowData.speaker || 'Unknown';
+  const messageCode = (() => {
+    // Try to find message code from conversation panel
+    const messageElement = chatMessages.querySelector(`.message[data-conversation-index="${rowIndex}"]`);
+    if (messageElement) {
+      return messageElement.getAttribute('data-message-code') || `Turn ${rowIndex + 1}`;
+    }
+    return `Turn ${rowIndex + 1}`;
+  })();
+  
+  title.textContent = `Actions for ${speaker} (${messageCode})`;
+  
+  // Clear and populate actions list
+  actionsList.innerHTML = '';
+  
+  if (actionsArray.length === 0) {
+    const noActions = document.createElement('div');
+    noActions.style.padding = 'var(--spacing-lg)';
+    noActions.style.textAlign = 'center';
+    noActions.style.color = 'var(--color-text-light)';
+    noActions.textContent = 'No actions yet. Click "Add Action" to create one.';
+    actionsList.appendChild(noActions);
+  } else {
+    actionsArray.forEach((action, index) => {
+      const actionItem = document.createElement('div');
+      actionItem.style.padding = 'var(--spacing-md)';
+      actionItem.style.marginBottom = 'var(--spacing-sm)';
+      actionItem.style.background = 'var(--color-bg-light)';
+      actionItem.style.border = '1px solid var(--color-border)';
+      actionItem.style.borderRadius = 'var(--border-radius-md)';
+      
+      const actionContent = typeof action === 'string' ? action : (action.content || '');
+      const actionCode = `${messageCode}.${index + 1}`;
+      
+      const codeSpan = document.createElement('div');
+      codeSpan.style.fontSize = 'var(--font-size-xs)';
+      codeSpan.style.color = 'var(--color-text-light)';
+      codeSpan.style.marginBottom = 'var(--spacing-xs)';
+      codeSpan.style.fontWeight = '600';
+      codeSpan.textContent = actionCode;
+      
+      const contentDiv = document.createElement('div');
+      contentDiv.style.color = 'var(--color-text)';
+      contentDiv.textContent = actionContent || '(Empty action)';
+      
+      actionItem.appendChild(codeSpan);
+      actionItem.appendChild(contentDiv);
+      actionsList.appendChild(actionItem);
+    });
+  }
+  
+  // Show modal
+  modal.style.display = 'flex';
+}
+
+// Create action for a specific row (when message not in conversation panel)
+function createActionForRow(rowIndex) {
+  if (rowIndex < 0 || rowIndex >= conversationData.length) {
+    return;
+  }
+  
+  const row = conversationData[rowIndex];
+  if (!row) {
+    return;
+  }
+  
+  // Ensure actions array exists
+  if (!row.actions) {
+    row.actions = [];
+  }
+  
+  // Find message code from conversation panel if available
+  const messageElement = chatMessages.querySelector(`.message[data-conversation-index="${rowIndex}"]`);
+  let messageCode = null;
+  
+  if (messageElement) {
+    messageCode = messageElement.getAttribute('data-message-code');
+  } else {
+    // Generate message code based on speaker and position
+    let messageNumber = 0;
+    for (let i = 0; i <= rowIndex; i++) {
+      if (conversationData[i].speaker === row.speaker) {
+        messageNumber++;
+      }
+    }
+    const prefix = row.speaker === 'AI Agent' ? 'A' : 'M';
+    messageCode = `${prefix}${messageNumber}`;
+  }
+  
+  if (!messageCode) {
+    alert('Could not determine message code');
+    return;
+  }
+  
+  // Count existing actions
+  const existingActionsForMessage = Array.from(systemNotes.querySelectorAll('.system-action-item'))
+    .filter(action => {
+      const actionCode = action.getAttribute('data-message-code');
+      return actionCode && actionCode.startsWith(messageCode + '.');
+    });
+  
+  const newActionNumber = existingActionsForMessage.length + 1;
+  const newActionCode = `${messageCode}.${newActionNumber}`;
+  
+  // Add new empty action to conversationData
+  const newActionIndex = row.actions.length;
+  row.actions.push({
+    content: ''
+  });
+  
+  // Determine if this is a system action
+  const isSystemAction = row.speaker === 'AI Agent';
+  
+  // Create and add the action to the UI
+  addSystemAction('', newActionCode, rowIndex, newActionIndex, null, isSystemAction);
+  
+  // Immediately enter edit mode for the new action
+  const newActionDiv = systemNotes.querySelector(`[data-action-id="${systemActionCounter - 1}"]`);
+  if (newActionDiv) {
+    setTimeout(() => {
+      enterSystemActionEditMode(newActionDiv, rowIndex, newActionIndex);
     }, 100);
   }
 }
@@ -2097,6 +2356,7 @@ async function resetConversation() {
     conversationIndex = 0;
     currentlyEditingMessage = null;
     currentlyEditingSystemAction = null;
+    selectedMessageInConversation = null; // Clear selected message
     
     // Reset UI state
     messageInput.value = '';
@@ -2256,18 +2516,34 @@ function renderConversationTable() {
     // Show actions count and allow viewing/editing in Actions panel
     const actionsInfo = document.createElement('div');
     actionsInfo.className = 'actions-info';
+    actionsInfo.style.cursor = 'pointer';
+    actionsInfo.style.color = 'var(--color-primary)';
+    actionsInfo.style.textDecoration = 'underline';
+    actionsInfo.setAttribute('data-row-index', index);
     
-    // Get actions count
+    // Get actions count and actions array
     let actionsCount = 0;
+    let actionsArray = [];
     if (row.actions && Array.isArray(row.actions)) {
-      actionsCount = row.actions.filter(a => a && (typeof a === 'string' ? a.trim() : (a.content || '').trim())).length;
+      actionsArray = row.actions.filter(a => a && (typeof a === 'string' ? a.trim() : (a.content || '').trim()));
+      actionsCount = actionsArray.length;
     } else if (row.system_actions) {
       const parsed = parseSystemActions(row.system_actions);
+      actionsArray = parsed.map(action => ({
+        content: typeof action === 'string' ? action : action
+      }));
       actionsCount = parsed.length;
     }
     
     actionsInfo.textContent = actionsCount > 0 ? `${actionsCount} action${actionsCount !== 1 ? 's' : ''}` : 'No actions';
-    actionsInfo.title = 'Actions are managed in the Actions panel. Click a message to see its actions.';
+    actionsInfo.title = 'Click to view actions and add new ones';
+    
+    // Add click handler to show actions modal
+    actionsInfo.addEventListener('click', (e) => {
+      e.stopPropagation(); // Prevent row selection
+      showActionsModal(index, actionsArray, row);
+    });
+    
     actionsCell.appendChild(actionsInfo);
     
     const deleteCell = document.createElement('td');
