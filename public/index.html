@@ -60,7 +60,23 @@
         <div class="panels-wrapper">
             <div class="panel editor-panel" id="editorPanel">
             <div class="panel-header">
-                <h2>Conversation Editor</h2>
+                <h2>
+                    <span style="position: relative; display: inline-block;">
+                        Conversation Editor
+                        <span class="info-icon" id="conversationEditorInfo" tabindex="0" role="button" aria-label="Conversation Editor help"></span>
+                        <div class="tooltip" id="conversationEditorTooltip" role="tooltip">
+                            <div class="tooltip-content">
+                                <strong>Row Navigation</strong>
+                                <ul>
+                                    <li><strong>Click a row</strong> to expand or collapse it</li>
+                                    <li>Expanded rows show full content in larger textareas</li>
+                                    <li>Clicking a row also <strong>scrolls to the corresponding message</strong> in the Conversation panel</li>
+                                    <li>Click the same row again to collapse it</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </span>
+                </h2>
                 <div class="header-actions">
                     <button id="saveConversationButton" class="btn btn-primary">Save Changes</button>
                     <button id="downloadCsvButton" class="btn btn-secondary">⬇ Download CSV</button>
@@ -98,21 +114,13 @@
                                 </th>
                                 <th>
                                     <span style="position: relative; display: inline-block;">
-                                        System Actions
-                                        <span class="info-icon" id="systemActionsInfo" tabindex="0" role="button" aria-label="System actions syntax help"></span>
+                                        Actions
+                                        <span class="info-icon" id="systemActionsInfo" tabindex="0" role="button" aria-label="Actions syntax help"></span>
                                         <div class="tooltip" id="systemActionsTooltip" role="tooltip">
                                         <div class="tooltip-content">
-                                            <strong>System Actions Syntax</strong>
-                                            <p>Actions are comma-separated and wrapped in brackets. Commas inside brackets are preserved.</p>
-                                            <ul>
-                                                <li><strong>Single action:</strong> <code>[Action name]</code></li>
-                                                <li><strong>Multiple actions:</strong> <code>[Action 1],[Action 2]</code></li>
-                                                <li><strong>Action with comma:</strong> <code>[Action 1, with comma],[Action 2]</code></li>
-                                            </ul>
-                                            <p style="margin-top: var(--spacing-sm); font-size: 0.9em; opacity: 0.9;">
-                                                <strong>Example:</strong><br>
-                                                <code>[Calls API endpoint],[Creates user profile],[Updates database, with transaction]</code>
-                                            </p>
+                                            <strong>Actions</strong>
+                                            <p>Actions can be associated with any message. Actions for AI Agent messages are System Actions, and actions for Merchant messages are User Actions.</p>
+                                            <p>Actions are stored individually in the database. Use the Actions panel to add, edit, or delete actions for each message.</p>
                                         </div>
                                     </div>
                                     </span>
@@ -129,7 +137,18 @@
             </div>
         <div class="panel chat-panel">
             <div class="panel-header">
-                <h2>Conversation</h2>
+                <h2>
+                    <span style="position: relative; display: inline-block;">
+                        Conversation
+                        <span class="info-icon" id="conversationPanelInfo" tabindex="0" role="button" aria-label="Conversation panel help"></span>
+                        <div class="tooltip" id="conversationPanelTooltip" role="tooltip">
+                            <div class="tooltip-content">
+                                <strong>Edit Messages</strong>
+                                <p>Click on any message to edit its content. The message will open in edit mode where you can modify the text and save your changes.</p>
+                            </div>
+                        </div>
+                    </span>
+                </h2>
                 <button id="resetButton" class="btn btn-primary" title="Reset conversation">↻ Reset</button>
             </div>
             <div class="panel-content chat-messages" id="chatMessages">
@@ -152,11 +171,22 @@
         </div>
         <div class="panel system-notes-panel">
             <div class="panel-header">
-                <h2>System Notes</h2>
-                <button id="addSystemActionButton" class="btn btn-primary">+ Add System Action</button>
+                <h2>
+                    <span style="position: relative; display: inline-block;">
+                        Actions
+                        <span class="info-icon" id="systemNotesPanelInfo" tabindex="0" role="button" aria-label="Actions panel help"></span>
+                        <div class="tooltip" id="systemNotesPanelTooltip" role="tooltip">
+                            <div class="tooltip-content">
+                                <strong>Edit Actions</strong>
+                                <p>Click on any action to edit its content. Actions can be System Actions (for AI Agent messages) or User Actions (for Merchant messages). You can modify the action description, save your changes, or delete the action entirely.</p>
+                            </div>
+                        </div>
+                    </span>
+                </h2>
+                <button id="addSystemActionButton" class="btn btn-primary">+ Add Action</button>
             </div>
             <div class="panel-content" id="systemNotes">
-                <!-- System actions will be inserted here -->
+                <!-- Actions will be inserted here -->
             </div>
         </div>
         </div>

@@ -146,23 +146,55 @@ function formatSystemActions(actions) {
 
 async function loadConversation(conversationId) {
   try {
-    const { data, error } = await supabase
+    // Load messages
+    const { data: messagesData, error: messagesError } = await supabase
       .from('conversation_message')
       .select('*')
       .eq('conversation_id', conversationId)
       .order('turn', { ascending: true });
     
-    if (error) {
-      throw error;
+    if (messagesError) {
+      throw messagesError;
     }
     
+    // Load actions for all messages
+    const messageIds = (messagesData || []).map(msg => msg.id);
+    let actionsData = [];
+    
+    if (messageIds.length > 0) {
+      const { data: actions, error: actionsError } = await supabase
+        .from('message_actions')
+        .select('*')
+        .in('conversation_message_id', messageIds)
+        .order('created_at', { ascending: true });
+      
+      if (actionsError) {
+        throw actionsError;
+      }
+      
+      actionsData = actions || [];
+    }
+    
+    // Group actions by message ID
+    const actionsByMessageId = {};
+    actionsData.forEach(action => {
+      if (!actionsByMessageId[action.conversation_message_id]) {
+        actionsByMessageId[action.conversation_message_id] = [];
+      }
+      actionsByMessageId[action.conversation_message_id].push({
+        id: action.id,
+        content: action.action_content
+      });
+    });
+    
     // Convert database rows to conversation format
-    const messages = (data || [])
+    const messages = (messagesData || [])
       .filter(row => row.speaker && row.message) // Filter out empty/invalid rows
       .map(row => ({
+        id: row.id, // Include message ID for action association
         speaker: row.speaker,
         message: row.message || '',
-        systemActions: parseSystemActions(row.system_actions || '')
+        actions: actionsByMessageId[row.id] || [] // Actions for this message
       }));
     
     // Cache the conversation
@@ -270,7 +302,8 @@ app.post('/api/next-message', async (req, res) => {
     for (let i = currentIndex; i < conversation.length; i++) {
       if (conversation[i].speaker === 'AI Agent' && nextAIMessage === null) {
         nextAIMessage = conversation[i].message;
-        systemActions = conversation[i].systemActions || [];
+        // Extract action contents for backward compatibility
+        systemActions = (conversation[i].actions || []).map(a => a.content);
         aiIndex = i;
         break;
       }
@@ -342,11 +375,13 @@ app.get('/api/conversation', async (req, res) => {
     }
     
     // Return conversation as array for frontend editing
+    // Include message IDs and actions for each message
     const conversationData = state.messages.map((msg, index) => ({
+      id: msg.id, // Include message ID
       turn: index + 1,
       speaker: msg.speaker,
       message: msg.message,
-      system_actions: formatSystemActions(msg.systemActions)
+      actions: msg.actions || [] // Include actions array with id and content
     }));
     
     res.json(conversationData);
@@ -368,18 +403,37 @@ app.post('/api/conversation', async (req, res) => {
       return res.status(400).json({ error: 'conversationData array is required' });
     }
     
+    // Get all existing message IDs for this conversation to delete actions
+    const { data: existingMessages, error: existingError } = await supabase
+      .from('conversation_message')
+      .select('id')
+      .eq('conversation_id', conversationId);
+    
+    if (existingError) {
+      throw existingError;
+    }
+    
+    const existingMessageIds = (existingMessages || []).map(m => m.id);
+    
+    // Delete all existing message_actions for these messages
+    if (existingMessageIds.length > 0) {
+      const { error: deleteActionsError } = await supabase
+        .from('message_actions')
+        .delete()
+        .in('conversation_message_id', existingMessageIds);
+      
+      if (deleteActionsError) {
+        throw deleteActionsError;
+      }
+    }
+    
     // Prepare data for database
-    // Parse and reformat system_actions to ensure proper bracket syntax
-    const dbData = conversationData.map(row => {
-      const systemActions = parseSystemActions(row.system_actions || '');
-      return {
-        conversation_id: conversationId,
-        turn: parseInt(row.turn) || null,
-        speaker: row.speaker || '',
-        message: row.message || '',
-        system_actions: formatSystemActions(systemActions) || null
-      };
-    });
+    const dbData = conversationData.map(row => ({
+      conversation_id: conversationId,
+      turn: parseInt(row.turn) || null,
+      speaker: row.speaker || '',
+      message: row.message || ''
+    }));
     
     // Delete all existing records for this conversation and insert new ones
     const { error: deleteError } = await supabase
@@ -392,6 +446,7 @@ app.post('/api/conversation', async (req, res) => {
     }
     
     // Insert new records (only if there's data to insert)
+    let insertedMessages = [];
     if (dbData.length > 0) {
       const { data, error: insertError } = await supabase
         .from('conversation_message')
@@ -400,6 +455,57 @@ app.post('/api/conversation', async (req, res) => {
       
       if (insertError) {
         throw insertError;
+      }
+      
+      insertedMessages = data || [];
+    }
+    
+    // Insert actions for each message
+    const actionsToInsert = [];
+    conversationData.forEach((row, index) => {
+      const messageId = insertedMessages[index]?.id;
+      if (!messageId) return;
+      
+      // Support new format: actions array
+      if (row.actions && Array.isArray(row.actions)) {
+        row.actions.forEach(action => {
+          // Support both new format (object with id/content) and legacy format (string)
+          const actionContent = typeof action === 'string' ? action : (action.content || '');
+          if (actionContent && actionContent.trim()) {
+            actionsToInsert.push({
+              conversation_message_id: messageId,
+              action_content: actionContent.trim()
+            });
+          }
+        });
+      }
+      // Backward compatibility: support old system_actions format
+      else if (row.system_actions) {
+        const parsedActions = parseSystemActions(row.system_actions);
+        parsedActions.forEach(action => {
+          // Strip brackets if present
+          let actionContent = action.trim();
+          if (actionContent.startsWith('[') && actionContent.endsWith(']')) {
+            actionContent = actionContent.slice(1, -1);
+          }
+          if (actionContent && actionContent.trim()) {
+            actionsToInsert.push({
+              conversation_message_id: messageId,
+              action_content: actionContent.trim()
+            });
+          }
+        });
+      }
+    });
+    
+    // Insert all actions at once
+    if (actionsToInsert.length > 0) {
+      const { error: insertActionsError } = await supabase
+        .from('message_actions')
+        .insert(actionsToInsert);
+      
+      if (insertActionsError) {
+        throw insertActionsError;
       }
     }
     

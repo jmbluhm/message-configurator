@@ -74,6 +74,7 @@ function initConversationElements() {
 let isWaitingForResponse = false;
 let systemActionCounter = 0;
 let aiAgentMessageNumber = 0;
+let merchantMessageNumber = 0; // Track Merchant message numbers
 let conversationIndex = 0; // Track current position in conversationData
 let currentlyEditingMessage = null; // Track which message is being edited
 let currentlyEditingSystemAction = null; // Track which system action is being edited
@@ -512,6 +513,7 @@ async function loadConversationData() {
   if (systemNotes) systemNotes.innerHTML = '';
   systemActionCounter = 0;
   aiAgentMessageNumber = 0;
+  merchantMessageNumber = 0;
   conversationIndex = 0;
   currentlyEditingMessage = null;
   currentlyEditingSystemAction = null;
@@ -1029,11 +1031,11 @@ function parseMessage(message, speaker) {
   return { html, systemActions };
 }
 
-// Add system action to system notes panel
-function addSystemAction(actionContent, messageCode, conversationDataIndex = -1, actionIndex = -1) {
+// Add action to actions panel (supports both System and User actions)
+function addSystemAction(actionContent, messageCode, conversationDataIndex = -1, actionIndex = -1, actionId = null, isSystemAction = true) {
   const actionDiv = document.createElement('div');
-  actionDiv.className = 'system-action-item system-action-editable';
-  actionDiv.setAttribute('data-action-id', systemActionCounter++);
+  actionDiv.className = `system-action-item system-action-editable ${isSystemAction ? 'system-action' : 'user-action'}`;
+  actionDiv.setAttribute('data-action-id', actionId || systemActionCounter++);
   actionDiv.setAttribute('data-message-code', messageCode);
   
   // Store indices for editing
@@ -1047,6 +1049,12 @@ function addSystemAction(actionContent, messageCode, conversationDataIndex = -1,
   timeDiv.className = 'system-action-time';
   timeDiv.textContent = timestamp;
   
+  // Create action type label
+  const typeDiv = document.createElement('div');
+  typeDiv.className = 'system-action-type';
+  typeDiv.textContent = isSystemAction ? 'System' : 'User';
+  typeDiv.title = isSystemAction ? 'System Action (AI Agent)' : 'User Action (Merchant)';
+  
   const codeDiv = document.createElement('div');
   codeDiv.className = 'system-action-code';
   codeDiv.textContent = messageCode;
@@ -1054,7 +1062,7 @@ function addSystemAction(actionContent, messageCode, conversationDataIndex = -1,
   codeDiv.title = 'Click to highlight related message';
   codeDiv.addEventListener('click', (e) => {
     e.stopPropagation(); // Prevent triggering edit mode
-    // Extract base message code (e.g., "1.1" -> "1")
+    // Extract base message code (e.g., "A1.1" -> "A1" or "M1.1" -> "M1")
     const baseCode = messageCode.split('.')[0];
     highlightRelatedItems(baseCode);
   });
@@ -1069,16 +1077,17 @@ function addSystemAction(actionContent, messageCode, conversationDataIndex = -1,
   contentDiv.textContent = strippedContent;
   
   actionDiv.appendChild(timeDiv);
+  actionDiv.appendChild(typeDiv);
   actionDiv.appendChild(codeDiv);
   actionDiv.appendChild(contentDiv);
   
   // Add click handler for editing (only if we have data indices)
   if (conversationDataIndex !== -1 && actionIndex !== -1) {
     actionDiv.style.cursor = 'pointer';
-    actionDiv.title = 'Click to edit system action';
+    actionDiv.title = `Click to edit ${isSystemAction ? 'system' : 'user'} action`;
     actionDiv.addEventListener('click', (e) => {
       // Don't trigger edit if clicking on code or other interactive elements
-      if (e.target.closest('.system-action-code') || e.target.closest('.edit-controls')) {
+      if (e.target.closest('.system-action-code') || e.target.closest('.edit-controls') || e.target.closest('.system-action-type')) {
         return;
       }
       enterSystemActionEditMode(actionDiv, conversationDataIndex, actionIndex);
@@ -1097,6 +1106,7 @@ function hydrateMessagesFromData(data) {
   
   // Reset counters
   aiAgentMessageNumber = 0;
+  merchantMessageNumber = 0;
   systemActionCounter = 0;
   conversationIndex = 0;
   
@@ -1112,18 +1122,40 @@ function hydrateMessagesFromData(data) {
     const row = data[i];
     const speaker = row.speaker;
     const message = (row.message || '').replace(/\\n/g, '\n');
-    const systemActions = row.system_actions ? parseSystemActions(row.system_actions) : [];
+    
+    // Get actions from new format (actions array) or legacy format (system_actions string)
+    let actions = [];
+    if (row.actions && Array.isArray(row.actions)) {
+      // New format: actions array
+      actions = row.actions;
+    } else if (row.system_actions) {
+      // Legacy format: parse system_actions string
+      const parsedActions = parseSystemActions(row.system_actions);
+      actions = parsedActions.map(action => ({
+        content: typeof action === 'string' ? action : action
+      }));
+    }
     
     // Create message element
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${speaker.toLowerCase().replace(' ', '-')}`;
     messageDiv.setAttribute('data-conversation-index', i);
+    if (row.id) {
+      messageDiv.setAttribute('data-message-id', row.id);
+    }
     
-    // Track AI Agent message numbers
+    // Track message numbers and generate codes
     let messageCode = null;
+    let messagePrefix = '';
     if (speaker === 'AI Agent') {
       aiAgentMessageNumber++;
-      messageCode = `${aiAgentMessageNumber}`;
+      messagePrefix = 'A';
+      messageCode = `${messagePrefix}${aiAgentMessageNumber}`;
+      messageDiv.setAttribute('data-message-code', messageCode);
+    } else if (speaker === 'Merchant') {
+      merchantMessageNumber++;
+      messagePrefix = 'M';
+      messageCode = `${messagePrefix}${merchantMessageNumber}`;
       messageDiv.setAttribute('data-message-code', messageCode);
     }
     
@@ -1131,12 +1163,12 @@ function hydrateMessagesFromData(data) {
     const speakerDiv = document.createElement('div');
     speakerDiv.className = 'message-speaker';
     
-    if (speaker === 'AI Agent' && messageCode) {
+    if (messageCode) {
       const codeSpan = document.createElement('span');
       codeSpan.className = 'message-code';
       codeSpan.textContent = `- ${messageCode}`;
       codeSpan.style.cursor = 'pointer';
-      codeSpan.title = 'Click to highlight related system actions';
+      codeSpan.title = 'Click to highlight related actions';
       codeSpan.addEventListener('click', (e) => {
         e.stopPropagation();
         highlightRelatedItems(messageCode);
@@ -1171,16 +1203,19 @@ function hydrateMessagesFromData(data) {
     
     messageElements.push(messageDiv);
     
-    // Process system actions
-    if (systemActions.length > 0 && messageCode) {
-      systemActions.forEach((action, actionIndex) => {
+    // Process actions for this message
+    if (actions.length > 0 && messageCode) {
+      const isSystemAction = speaker === 'AI Agent';
+      actions.forEach((action, actionIndex) => {
         const actionCounter = actionIndex + 1;
         const actionCode = `${messageCode}.${actionCounter}`;
-        const actionContent = typeof action === 'string' ? action : action;
+        const actionContent = typeof action === 'string' ? action : (action.content || '');
+        const actionId = action.id || null;
         
+        // Create action element using the updated addSystemAction function
         const actionDiv = document.createElement('div');
-        actionDiv.className = 'system-action-item system-action-editable';
-        actionDiv.setAttribute('data-action-id', systemActionCounter++);
+        actionDiv.className = `system-action-item system-action-editable ${isSystemAction ? 'system-action' : 'user-action'}`;
+        actionDiv.setAttribute('data-action-id', actionId || systemActionCounter++);
         actionDiv.setAttribute('data-message-code', actionCode);
         actionDiv.setAttribute('data-conversation-index', i);
         actionDiv.setAttribute('data-action-index', actionIndex);
@@ -1190,6 +1225,12 @@ function hydrateMessagesFromData(data) {
         timeDiv.className = 'system-action-time';
         timeDiv.textContent = timestamp;
         
+        // Create action type label
+        const typeDiv = document.createElement('div');
+        typeDiv.className = 'system-action-type';
+        typeDiv.textContent = isSystemAction ? 'System' : 'User';
+        typeDiv.title = isSystemAction ? 'System Action (AI Agent)' : 'User Action (Merchant)';
+        
         const codeDiv = document.createElement('div');
         codeDiv.className = 'system-action-code';
         codeDiv.textContent = actionCode;
@@ -1197,8 +1238,7 @@ function hydrateMessagesFromData(data) {
         codeDiv.title = 'Click to highlight related message';
         codeDiv.addEventListener('click', (e) => {
           e.stopPropagation();
-          const baseCode = actionCode.split('.')[0];
-          highlightRelatedItems(baseCode);
+          highlightRelatedItems(messageCode);
         });
         
         const contentDiv = document.createElement('div');
@@ -1210,13 +1250,14 @@ function hydrateMessagesFromData(data) {
         contentDiv.textContent = strippedContent;
         
         actionDiv.appendChild(timeDiv);
+        actionDiv.appendChild(typeDiv);
         actionDiv.appendChild(codeDiv);
         actionDiv.appendChild(contentDiv);
         
         actionDiv.style.cursor = 'pointer';
-        actionDiv.title = 'Click to edit system action';
+        actionDiv.title = `Click to edit ${isSystemAction ? 'system' : 'user'} action`;
         actionDiv.addEventListener('click', (e) => {
-          if (e.target.closest('.system-action-code') || e.target.closest('.edit-controls')) {
+          if (e.target.closest('.system-action-code') || e.target.closest('.edit-controls') || e.target.closest('.system-action-type')) {
             return;
           }
           enterSystemActionEditMode(actionDiv, i, actionIndex);
@@ -1234,7 +1275,7 @@ function hydrateMessagesFromData(data) {
   // Single DOM update for messages
   chatMessages.appendChild(messagesFragment);
   
-  // Single DOM update for system actions
+  // Single DOM update for actions
   if (systemActionElements.length > 0) {
     systemNotes.appendChild(systemActionsFragment);
   }
@@ -1300,25 +1341,30 @@ function addMessage(speaker, message, systemActionsFromAPI = []) {
     messageDiv.setAttribute('data-conversation-index', dataIndex);
   }
   
-  // Track AI Agent message numbers and generate codes
+  // Track message numbers and generate codes for both speakers
   let messageCode = null;
-  let actionCounter = 0;
+  let messagePrefix = '';
   
   if (speaker === 'AI Agent') {
     aiAgentMessageNumber++;
-    messageCode = `${aiAgentMessageNumber}`;
+    messagePrefix = 'A';
+    messageCode = `${messagePrefix}${aiAgentMessageNumber}`;
+  } else if (speaker === 'Merchant') {
+    merchantMessageNumber++;
+    messagePrefix = 'M';
+    messageCode = `${messagePrefix}${merchantMessageNumber}`;
   }
   
   const speakerDiv = document.createElement('div');
   speakerDiv.className = 'message-speaker';
   
-  // Display speaker with message code for AI Agent
-  if (speaker === 'AI Agent' && messageCode) {
+  // Display speaker with message code
+  if (messageCode) {
     const codeSpan = document.createElement('span');
     codeSpan.className = 'message-code';
     codeSpan.textContent = `- ${messageCode}`;
     codeSpan.style.cursor = 'pointer';
-    codeSpan.title = 'Click to highlight related system actions';
+    codeSpan.title = 'Click to highlight related actions';
     codeSpan.addEventListener('click', (e) => {
       e.stopPropagation(); // Prevent triggering message edit
       highlightRelatedItems(messageCode);
@@ -1337,36 +1383,55 @@ function addMessage(speaker, message, systemActionsFromAPI = []) {
   const parsed = parseMessage(message, speaker);
   contentDiv.innerHTML = parsed.html;
   
-  // Use system actions from API if provided, otherwise use parsed actions
-  const systemActionsToUse = systemActionsFromAPI.length > 0 
-    ? systemActionsFromAPI.map(action => ({ content: action }))
-    : parsed.systemActions;
+  // Get actions from conversationData if available, otherwise use API or parsed actions
+  let actionsToUse = [];
+  if (dataIndex !== -1 && conversationData[dataIndex]) {
+    // New format: actions array
+    if (conversationData[dataIndex].actions && Array.isArray(conversationData[dataIndex].actions)) {
+      actionsToUse = conversationData[dataIndex].actions;
+    }
+    // Legacy format: system_actions string
+    else if (conversationData[dataIndex].system_actions) {
+      const parsedActions = parseSystemActions(conversationData[dataIndex].system_actions);
+      actionsToUse = parsedActions.map(action => ({
+        content: typeof action === 'string' ? action : action
+      }));
+    }
+  }
   
-  // Add system actions to the system notes panel with codes
-  if (systemActionsToUse && systemActionsToUse.length > 0 && messageCode && dataIndex !== -1) {
-    // Get existing system actions from conversationData
-    const existingActions = conversationData[dataIndex].system_actions 
-      ? parseSystemActions(conversationData[dataIndex].system_actions)
-      : [];
-    
-    systemActionsToUse.forEach((action, index) => {
-      actionCounter++;
-      const actionCode = `${messageCode}.${actionCounter}`;
-      const actionContent = typeof action === 'string' ? action : action.content;
-      // Find the index in the existing actions array, or use the current index if not found
-      let actionIndexInData = existingActions.findIndex(a => a === actionContent || a.includes(actionContent.substring(0, 20)));
-      if (actionIndexInData === -1) {
-        // If not found, try to match by position or add at the end
-        if (index < existingActions.length) {
-          actionIndexInData = index;
-        } else {
-          actionIndexInData = existingActions.length;
-          // Add to conversationData if it doesn't exist
-          existingActions.push(actionContent);
-          conversationData[dataIndex].system_actions = formatSystemActions(existingActions);
-        }
+  // Fallback to API actions or parsed actions
+  if (actionsToUse.length === 0) {
+    if (systemActionsFromAPI.length > 0) {
+      actionsToUse = systemActionsFromAPI.map(action => ({ content: action }));
+    } else if (parsed.systemActions && parsed.systemActions.length > 0) {
+      actionsToUse = parsed.systemActions.map(action => ({
+        content: typeof action === 'string' ? action : action.content
+      }));
+    }
+  }
+  
+  // Add actions to the actions panel with codes
+  if (actionsToUse && actionsToUse.length > 0 && messageCode && dataIndex !== -1) {
+    const isSystemAction = speaker === 'AI Agent';
+    actionsToUse.forEach((action, index) => {
+      const actionCode = `${messageCode}.${index + 1}`;
+      const actionContent = typeof action === 'string' ? action : (action.content || '');
+      const actionId = action.id || null;
+      
+      // Ensure conversationData has actions array
+      if (!conversationData[dataIndex].actions) {
+        conversationData[dataIndex].actions = [];
       }
-      addSystemAction(actionContent, actionCode, dataIndex, actionIndexInData);
+      
+      // Add action to conversationData if not already there
+      if (index >= conversationData[dataIndex].actions.length) {
+        conversationData[dataIndex].actions.push({
+          id: actionId,
+          content: actionContent
+        });
+      }
+      
+      addSystemAction(actionContent, actionCode, dataIndex, index, actionId, isSystemAction);
     });
   }
   
@@ -1592,11 +1657,24 @@ function enterSystemActionEditMode(actionDiv, conversationDataIndex, actionIndex
   actionDiv.classList.add('editing');
   
   const contentDiv = actionDiv.querySelector('.system-action-content');
-  const systemActions = conversationData[conversationDataIndex].system_actions 
-    ? parseSystemActions(conversationData[conversationDataIndex].system_actions)
-    : [];
-  let originalContent = systemActions[actionIndex] || '';
-  // Strip brackets for editing (they'll be added back when saving)
+  
+  // Get actions from new format (actions array) or legacy format (system_actions string)
+  let actions = [];
+  if (conversationData[conversationDataIndex].actions && Array.isArray(conversationData[conversationDataIndex].actions)) {
+    actions = conversationData[conversationDataIndex].actions;
+  } else if (conversationData[conversationDataIndex].system_actions) {
+    const parsedActions = parseSystemActions(conversationData[conversationDataIndex].system_actions);
+    actions = parsedActions.map(action => ({
+      content: typeof action === 'string' ? action : action
+    }));
+  }
+  
+  let originalContent = '';
+  if (actionIndex < actions.length) {
+    originalContent = typeof actions[actionIndex] === 'string' ? actions[actionIndex] : (actions[actionIndex].content || '');
+  }
+  
+  // Strip brackets for editing (they're not needed in the new format)
   if (originalContent.startsWith('[') && originalContent.endsWith(']')) {
     originalContent = originalContent.slice(1, -1);
   }
@@ -1633,15 +1711,16 @@ function enterSystemActionEditMode(actionDiv, conversationDataIndex, actionIndex
   
   const deleteButton = document.createElement('button');
   deleteButton.className = 'btn btn-secondary edit-delete-btn';
-  deleteButton.textContent = 'Delete';
-  deleteButton.style.background = 'var(--color-danger)';
-  deleteButton.style.color = 'white';
-  deleteButton.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (confirm('Delete this system action?')) {
-      deleteSystemAction(actionDiv, conversationDataIndex, actionIndex);
-    }
-  });
+      deleteButton.textContent = 'Delete';
+      deleteButton.style.background = 'var(--color-danger)';
+      deleteButton.style.color = 'white';
+      deleteButton.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const actionType = actionDiv.classList.contains('system-action') ? 'system' : 'user';
+        if (confirm(`Delete this ${actionType} action?`)) {
+          deleteSystemAction(actionDiv, conversationDataIndex, actionIndex);
+        }
+      });
   
   editControls.appendChild(saveButton);
   editControls.appendChild(cancelButton);
@@ -1684,16 +1763,29 @@ function cancelSystemActionEditMode(actionDiv) {
   
   if (conversationDataIndex !== -1 && actionIndex !== -1 && conversationData[conversationDataIndex]) {
     const contentDiv = actionDiv.querySelector('.system-action-content');
-    const systemActions = conversationData[conversationDataIndex].system_actions 
-      ? parseSystemActions(conversationData[conversationDataIndex].system_actions)
-      : [];
-    const originalContent = systemActions[actionIndex] || '';
+    
+    // Get actions from new format or legacy format
+    let actions = [];
+    if (conversationData[conversationDataIndex].actions && Array.isArray(conversationData[conversationDataIndex].actions)) {
+      actions = conversationData[conversationDataIndex].actions;
+    } else if (conversationData[conversationDataIndex].system_actions) {
+      const parsedActions = parseSystemActions(conversationData[conversationDataIndex].system_actions);
+      actions = parsedActions.map(action => ({
+        content: typeof action === 'string' ? action : action
+      }));
+    }
+    
+    let originalContent = '';
+    if (actionIndex < actions.length) {
+      originalContent = typeof actions[actionIndex] === 'string' ? actions[actionIndex] : (actions[actionIndex].content || '');
+    }
     
     // If the action was empty (newly created) and user cancels, remove it
-    if (originalContent === '' && actionIndex >= systemActions.length - 1) {
+    if (originalContent === '' && actionIndex >= actions.length - 1) {
       // Remove empty action from conversationData
-      systemActions.pop();
-      conversationData[conversationDataIndex].system_actions = formatSystemActions(systemActions);
+      if (conversationData[conversationDataIndex].actions) {
+        conversationData[conversationDataIndex].actions.pop();
+      }
       // Remove from UI
       actionDiv.remove();
     } else {
@@ -1718,80 +1810,58 @@ async function saveSystemActionEdit(actionDiv, conversationDataIndex, actionInde
     return;
   }
   
-  // Update conversationData
-  let systemActions = conversationData[conversationDataIndex].system_actions 
-    ? parseSystemActions(conversationData[conversationDataIndex].system_actions)
-    : [];
+  // Ensure actions array exists
+  if (!conversationData[conversationDataIndex].actions) {
+    conversationData[conversationDataIndex].actions = [];
+  }
   
   const trimmedContent = newContent.trim();
   
   // If saving empty content, remove the action
   if (trimmedContent === '') {
-    if (actionIndex < systemActions.length) {
-      systemActions.splice(actionIndex, 1);
+    if (actionIndex < conversationData[conversationDataIndex].actions.length) {
+      conversationData[conversationDataIndex].actions.splice(actionIndex, 1);
       actionDiv.remove();
     }
-    conversationData[conversationDataIndex].system_actions = formatSystemActions(systemActions.filter(s => s.trim() !== ''));
     
     // Save to backend
-    try {
-      const sortedData = [...conversationData].sort((a, b) => {
-        const turnA = parseInt(a.turn) || 0;
-        const turnB = parseInt(b.turn) || 0;
-        return turnA - turnB;
-      });
-      
-      sortedData.forEach((row, index) => {
-        row.turn = index + 1;
-      });
-      
-      const response = await fetch('/api/conversation', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(sortedData),
-        credentials: 'include'
-      });
-      
-      const result = await response.json();
-      
-      if (response.ok) {
-        renderConversationTable();
-      }
-    } catch (error) {
-      // Error saving
-    }
+    await saveConversationToBackend();
     
     currentlyEditingSystemAction = null;
     return;
   }
   
-  if (actionIndex >= systemActions.length) {
+  // Update or add action
+  if (actionIndex >= conversationData[conversationDataIndex].actions.length) {
     // Add new action
-    systemActions.push(trimmedContent);
+    conversationData[conversationDataIndex].actions.push({
+      content: trimmedContent
+    });
   } else {
     // Update existing action
-    systemActions[actionIndex] = trimmedContent;
+    const existingAction = conversationData[conversationDataIndex].actions[actionIndex];
+    if (typeof existingAction === 'string') {
+      conversationData[conversationDataIndex].actions[actionIndex] = {
+        content: trimmedContent
+      };
+    } else {
+      conversationData[conversationDataIndex].actions[actionIndex].content = trimmedContent;
+    }
   }
-  
-  // Filter out empty actions before saving
-  systemActions = systemActions.filter(s => s.trim() !== '');
-  
-  const oldSystemActions = conversationData[conversationDataIndex].system_actions;
-  conversationData[conversationDataIndex].system_actions = formatSystemActions(systemActions);
   
   // Update the display
   actionDiv.classList.remove('editing');
   const contentDiv = actionDiv.querySelector('.system-action-content');
-  // Strip brackets for display (they're only needed for parsing)
-  let displayContent = trimmedContent;
-  if (displayContent.startsWith('[') && displayContent.endsWith(']')) {
-    displayContent = displayContent.slice(1, -1);
-  }
-  contentDiv.textContent = displayContent;
+  contentDiv.textContent = trimmedContent;
   
   // Save to backend
+  await saveConversationToBackend(actionDiv);
+  
+  currentlyEditingSystemAction = null;
+}
+
+// Helper function to save conversation to backend
+async function saveConversationToBackend(actionDiv = null) {
   try {
     const sortedData = [...conversationData].sort((a, b) => {
       const turnA = parseInt(a.turn) || 0;
@@ -1827,23 +1897,18 @@ async function saveSystemActionEdit(actionDiv, conversationDataIndex, actionInde
       renderConversationTable();
       
       // Show a brief success indicator
-      actionDiv.classList.add('edit-saved');
-      setTimeout(() => {
-        actionDiv.classList.remove('edit-saved');
-      }, 2000);
-      
-      currentlyEditingSystemAction = null;
+      if (actionDiv) {
+        actionDiv.classList.add('edit-saved');
+        setTimeout(() => {
+          actionDiv.classList.remove('edit-saved');
+        }, 2000);
+      }
     } else {
-      // Revert on error
-      conversationData[conversationDataIndex].system_actions = oldSystemActions;
-      cancelSystemActionEditMode(actionDiv);
-      alert('Failed to save system action: ' + (result.error || 'Unknown error'));
+      throw new Error(result.error || 'Unknown error');
     }
   } catch (error) {
-    // Revert on error
-    conversationData[conversationDataIndex].system_actions = oldSystemActions;
-    cancelSystemActionEditMode(actionDiv);
-    alert('Failed to save system action. Please try again.');
+    alert('Failed to save action: ' + (error.message || 'Unknown error'));
+    throw error;
   }
 }
 
@@ -1853,63 +1918,34 @@ async function deleteSystemAction(actionDiv, conversationDataIndex, actionIndex)
     return;
   }
   
-  // Update conversationData
-  const systemActions = conversationData[conversationDataIndex].system_actions 
-    ? parseSystemActions(conversationData[conversationDataIndex].system_actions)
-    : [];
+  // Ensure actions array exists
+  if (!conversationData[conversationDataIndex].actions) {
+    conversationData[conversationDataIndex].actions = [];
+  }
   
-  if (actionIndex < systemActions.length) {
-    systemActions.splice(actionIndex, 1);
-    const oldSystemActions = conversationData[conversationDataIndex].system_actions;
-    conversationData[conversationDataIndex].system_actions = formatSystemActions(systemActions);
+  if (actionIndex < conversationData[conversationDataIndex].actions.length) {
+    // Remove from conversationData
+    conversationData[conversationDataIndex].actions.splice(actionIndex, 1);
     
     // Remove from UI
     actionDiv.remove();
     
     // Save to backend
     try {
-      const sortedData = [...conversationData].sort((a, b) => {
-        const turnA = parseInt(a.turn) || 0;
-        const turnB = parseInt(b.turn) || 0;
-        return turnA - turnB;
-      });
-      
-      sortedData.forEach((row, index) => {
-        row.turn = index + 1;
-      });
-      
-      const response = await fetch('/api/conversation', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(sortedData),
-        credentials: 'include'
-      });
-      
-      const result = await response.json();
-      
-      if (response.ok) {
-        // Update the Conversation Editor table
-        renderConversationTable();
-      } else {
-        // Revert on error
-        conversationData[conversationDataIndex].system_actions = oldSystemActions;
-        alert('Failed to delete system action: ' + (result.error || 'Unknown error'));
-      }
+      await saveConversationToBackend();
     } catch (error) {
-      conversationData[conversationDataIndex].system_actions = oldSystemActions;
-      alert('Failed to delete system action. Please try again.');
+      // Error already handled in saveConversationToBackend
     }
   }
 }
 
-// Create new system action for most recent message
+// Create new action for most recent message (supports both System and User actions)
 function createNewSystemAction() {
-  // Find the most recent AI Agent message in the conversation
-  let mostRecentAIMessage = null;
-  let mostRecentAIMessageIndex = -1;
-  let mostRecentAIMessageCode = null;
+  // Find the most recent message in the conversation (any speaker)
+  let mostRecentMessage = null;
+  let mostRecentMessageIndex = -1;
+  let mostRecentMessageCode = null;
+  let mostRecentSpeaker = null;
   
   // Look through all messages in chat
   const allMessages = Array.from(chatMessages.querySelectorAll('.message'));
@@ -1918,47 +1954,52 @@ function createNewSystemAction() {
     const messageCode = msg.getAttribute('data-message-code');
     const dataIndex = parseInt(msg.getAttribute('data-conversation-index'));
     
-    if (messageCode && dataIndex !== -1 && conversationData[dataIndex] && conversationData[dataIndex].speaker === 'AI Agent') {
-      mostRecentAIMessage = msg;
-      mostRecentAIMessageIndex = dataIndex;
-      mostRecentAIMessageCode = messageCode;
+    if (messageCode && dataIndex !== -1 && conversationData[dataIndex]) {
+      mostRecentMessage = msg;
+      mostRecentMessageIndex = dataIndex;
+      mostRecentMessageCode = messageCode;
+      mostRecentSpeaker = conversationData[dataIndex].speaker;
       break;
     }
   }
   
-  if (!mostRecentAIMessage || mostRecentAIMessageIndex === -1) {
-    alert('No AI Agent message found. Please wait for a message to be displayed first.');
+  if (!mostRecentMessage || mostRecentMessageIndex === -1) {
+    alert('No message found. Please wait for a message to be displayed first.');
     return;
   }
   
-  // Get existing system actions for this message
-  const systemActions = conversationData[mostRecentAIMessageIndex].system_actions 
-    ? parseSystemActions(conversationData[mostRecentAIMessageIndex].system_actions)
-    : [];
+  // Ensure conversationData has actions array
+  if (!conversationData[mostRecentMessageIndex].actions) {
+    conversationData[mostRecentMessageIndex].actions = [];
+  }
   
   // Count existing actions for this message to determine new action code
   const existingActionsForMessage = Array.from(systemNotes.querySelectorAll('.system-action-item'))
     .filter(action => {
       const actionCode = action.getAttribute('data-message-code');
-      return actionCode && actionCode.startsWith(mostRecentAIMessageCode + '.');
+      return actionCode && actionCode.startsWith(mostRecentMessageCode + '.');
     });
   
   const newActionNumber = existingActionsForMessage.length + 1;
-  const newActionCode = `${mostRecentAIMessageCode}.${newActionNumber}`;
+  const newActionCode = `${mostRecentMessageCode}.${newActionNumber}`;
   
   // Add new empty action to conversationData
-  systemActions.push('');
-  conversationData[mostRecentAIMessageIndex].system_actions = formatSystemActions(systemActions);
+  const newActionIndex = conversationData[mostRecentMessageIndex].actions.length;
+  conversationData[mostRecentMessageIndex].actions.push({
+    content: ''
+  });
   
-  // Create and add the system action to the UI
-  const newActionIndex = systemActions.length - 1;
-  addSystemAction('', newActionCode, mostRecentAIMessageIndex, newActionIndex);
+  // Determine if this is a system action
+  const isSystemAction = mostRecentSpeaker === 'AI Agent';
+  
+  // Create and add the action to the UI
+  addSystemAction('', newActionCode, mostRecentMessageIndex, newActionIndex, null, isSystemAction);
   
   // Immediately enter edit mode for the new action
   const newActionDiv = systemNotes.querySelector(`[data-action-id="${systemActionCounter - 1}"]`);
   if (newActionDiv) {
     setTimeout(() => {
-      enterSystemActionEditMode(newActionDiv, mostRecentAIMessageIndex, newActionIndex);
+      enterSystemActionEditMode(newActionDiv, mostRecentMessageIndex, newActionIndex);
     }, 100);
   }
 }
@@ -2052,6 +2093,7 @@ async function resetConversation() {
     systemNotes.innerHTML = '';
     systemActionCounter = 0;
     aiAgentMessageNumber = 0;
+    merchantMessageNumber = 0;
     conversationIndex = 0;
     currentlyEditingMessage = null;
     currentlyEditingSystemAction = null;
@@ -2085,16 +2127,29 @@ function highlightRelatedItems(messageCode) {
     el.classList.remove('message-highlighted', 'system-action-highlighted');
   });
   
-  // Highlight the message
-  const message = document.querySelector(`.message[data-message-code="${messageCode}"]`);
+  // Highlight the message (support both old format "1" and new format "A1", "M1")
+  let message = document.querySelector(`.message[data-message-code="${messageCode}"]`);
+  if (!message && messageCode.match(/^\d+$/)) {
+    // Try old format: if code is just a number, try to find AI Agent message
+    const aiMessages = Array.from(document.querySelectorAll('.message.ai-agent'));
+    const messageNum = parseInt(messageCode);
+    if (messageNum > 0 && messageNum <= aiMessages.length) {
+      message = aiMessages[messageNum - 1];
+    }
+  }
+  
   if (message) {
     message.classList.add('message-highlighted');
     // Scroll to message
     message.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
   
-  // Highlight related system actions
-  const actions = document.querySelectorAll(`.system-action-item[data-message-code^="${messageCode}"]`);
+  // Highlight related actions (support both old and new format)
+  let actions = document.querySelectorAll(`.system-action-item[data-message-code^="${messageCode}"]`);
+  if (actions.length === 0 && messageCode.match(/^\d+$/)) {
+    // Try old format: look for actions starting with the number
+    actions = document.querySelectorAll(`.system-action-item[data-message-code^="${messageCode}."]`);
+  }
   actions.forEach(action => {
     action.classList.add('system-action-highlighted');
   });
@@ -2198,14 +2253,22 @@ function renderConversationTable() {
     messageCell.appendChild(messageTextarea);
     
     const actionsCell = document.createElement('td');
-    const actionsTextarea = document.createElement('textarea');
-    actionsTextarea.className = 'table-input actions-textarea';
-    actionsTextarea.setAttribute('data-index', index);
-    actionsTextarea.setAttribute('data-field', 'system_actions');
-    actionsTextarea.rows = 3;
-    actionsTextarea.placeholder = '[Action 1, with comma],[Action 2]';
-    actionsTextarea.value = (row.system_actions || '').replace(/\\n/g, '\n');
-    actionsCell.appendChild(actionsTextarea);
+    // Show actions count and allow viewing/editing in Actions panel
+    const actionsInfo = document.createElement('div');
+    actionsInfo.className = 'actions-info';
+    
+    // Get actions count
+    let actionsCount = 0;
+    if (row.actions && Array.isArray(row.actions)) {
+      actionsCount = row.actions.filter(a => a && (typeof a === 'string' ? a.trim() : (a.content || '').trim())).length;
+    } else if (row.system_actions) {
+      const parsed = parseSystemActions(row.system_actions);
+      actionsCount = parsed.length;
+    }
+    
+    actionsInfo.textContent = actionsCount > 0 ? `${actionsCount} action${actionsCount !== 1 ? 's' : ''}` : 'No actions';
+    actionsInfo.title = 'Actions are managed in the Actions panel. Click a message to see its actions.';
+    actionsCell.appendChild(actionsInfo);
     
     const deleteCell = document.createElement('td');
     const deleteButton = document.createElement('button');
@@ -2261,8 +2324,8 @@ function attachTableEventListeners() {
       const field = e.target.dataset.field;
       let value = e.target.value;
       
-      // For message and system_actions fields, preserve newlines but convert to \n for storage
-      if (field === 'message' || field === 'system_actions') {
+      // For message field, preserve newlines but convert to \n for storage
+      if (field === 'message') {
         value = value.replace(/\n/g, '\\n');
       }
       
@@ -2281,7 +2344,7 @@ function attachTableEventListeners() {
         const field = e.target.dataset.field;
         let value = e.target.value;
         
-        if (field === 'message' || field === 'system_actions') {
+        if (field === 'message') {
           value = value.replace(/\n/g, '\\n');
         }
         
@@ -2439,7 +2502,7 @@ function addNewRow() {
     turn: insertIndex + 1, // For data consistency, but display uses index + 1
     speaker: 'AI Agent',
     message: '',
-    system_actions: ''
+    actions: []
   };
   
   // Insert at the specified index
@@ -2475,13 +2538,16 @@ async function saveConversation() {
       return turnA - turnB;
     });
     
-    // Renumber turns sequentially and format system_actions
+    // Renumber turns sequentially
     sortedData.forEach((row, index) => {
       row.turn = index + 1;
-      // Parse and reformat system_actions to ensure proper bracket syntax
-      if (row.system_actions) {
-        const actions = parseSystemActions(row.system_actions);
-        row.system_actions = formatSystemActions(actions);
+      // Ensure actions array is properly formatted
+      if (row.actions && Array.isArray(row.actions)) {
+        // Filter out empty actions
+        row.actions = row.actions.filter(a => {
+          const content = typeof a === 'string' ? a : (a.content || '');
+          return content && content.trim();
+        });
       }
     });
     
@@ -2534,18 +2600,13 @@ function downloadCsv() {
     return turnA - turnB;
   });
   
-  // Renumber turns sequentially and format system_actions
+  // Renumber turns sequentially
   sortedData.forEach((row, index) => {
     row.turn = index + 1;
-    // Parse and reformat system_actions to ensure proper bracket syntax
-    if (row.system_actions) {
-      const actions = parseSystemActions(row.system_actions);
-      row.system_actions = formatSystemActions(actions);
-    }
   });
   
   // CSV header
-  const headers = ['turn', 'speaker', 'message', 'system_actions'];
+  const headers = ['turn', 'speaker', 'message'];
   
   // Convert data to CSV format
   const csvRows = [
@@ -2565,8 +2626,7 @@ function downloadCsv() {
       return [
         escapeCsvValue(row.turn || ''),
         escapeCsvValue(row.speaker || ''),
-        escapeCsvValue((row.message || '').replace(/\n/g, '\\n')), // Convert newlines to \n for CSV
-        escapeCsvValue((row.system_actions || '').replace(/\n/g, '\\n')) // Convert newlines to \n for CSV
+        escapeCsvValue((row.message || '').replace(/\n/g, '\\n')) // Convert newlines to \n for CSV
       ].join(',');
     })
   ];
@@ -2643,10 +2703,16 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     setupTooltip('messageMarkdownInfo', 'messageMarkdownTooltip');
     setupTooltip('systemActionsInfo', 'systemActionsTooltip');
+    setupTooltip('conversationEditorInfo', 'conversationEditorTooltip');
+    setupTooltip('conversationPanelInfo', 'conversationPanelTooltip');
+    setupTooltip('systemNotesPanelInfo', 'systemNotesPanelTooltip');
   });
 } else {
   // DOM already loaded
   setupTooltip('messageMarkdownInfo', 'messageMarkdownTooltip');
   setupTooltip('systemActionsInfo', 'systemActionsTooltip');
+  setupTooltip('conversationEditorInfo', 'conversationEditorTooltip');
+  setupTooltip('conversationPanelInfo', 'conversationPanelTooltip');
+  setupTooltip('systemNotesPanelInfo', 'systemNotesPanelTooltip');
 }
 
