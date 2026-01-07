@@ -75,7 +75,25 @@
                             <tr>
                                 <th>Turn</th>
                                 <th>Speaker</th>
-                                <th>Message</th>
+                                <th>
+                                    Message
+                                    <span class="info-icon" id="messageMarkdownInfo" tabindex="0" role="button" aria-label="Markdown syntax help">ℹ️</span>
+                                    <div class="tooltip" id="messageMarkdownTooltip" role="tooltip">
+                                        <div class="tooltip-content">
+                                            <strong>Markdown Supported</strong>
+                                            <ul>
+                                                <li><strong>Bold:</strong> <code>**text**</code> or <code>__text__</code></li>
+                                                <li><em>Italic:</em> <code>*text*</code> or <code>_text_</code></li>
+                                                <li>Inline code: <code>`code`</code></li>
+                                                <li>Code block: <code>```code```</code></li>
+                                                <li>Links: <code>[text](url)</code></li>
+                                                <li>Lists: <code>- item</code> or <code>* item</code></li>
+                                                <li>Headers: <code># Header</code></li>
+                                                <li>Line breaks are preserved</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </th>
                                 <th>System Actions</th>
                                 <th>Actions</th>
                             </tr>

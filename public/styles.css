@@ -283,6 +283,95 @@ body {
     z-index: 10;
 }
 
+/* Info icon and tooltip styles */
+.info-icon {
+    display: inline-block;
+    margin-left: var(--spacing-xs);
+    cursor: help;
+    font-size: 14px;
+    color: var(--color-text-light);
+    transition: color 0.2s ease;
+    vertical-align: middle;
+    line-height: 1;
+}
+
+.info-icon:hover,
+.info-icon:focus {
+    color: var(--color-primary);
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+    border-radius: 50%;
+}
+
+.tooltip {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-bottom: var(--spacing-sm);
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+.info-icon:hover + .tooltip,
+.info-icon:focus + .tooltip,
+.tooltip:hover {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+
+.tooltip-content {
+    background: var(--color-bg-dark);
+    color: var(--color-text-white);
+    padding: var(--spacing-md);
+    border-radius: var(--border-radius-md);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    min-width: 280px;
+    max-width: 350px;
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+}
+
+.tooltip-content::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: var(--color-bg-dark);
+}
+
+.tooltip-content strong {
+    display: block;
+    margin-bottom: var(--spacing-sm);
+    font-size: var(--font-size-base);
+    color: var(--color-primary);
+}
+
+.tooltip-content ul {
+    margin: var(--spacing-sm) 0 0 0;
+    padding-left: var(--spacing-lg);
+    list-style: disc;
+}
+
+.tooltip-content li {
+    margin: var(--spacing-xs) 0;
+}
+
+.tooltip-content code {
+    background: rgba(255, 255, 255, 0.15);
+    padding: 2px 4px;
+    border-radius: var(--border-radius-sm);
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.9em;
+    color: var(--color-primary);
+}
+
 .conversation-table td {
     padding: 10px var(--spacing-md);
     border-bottom: 1px solid var(--color-border);

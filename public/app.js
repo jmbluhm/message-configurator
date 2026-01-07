@@ -2717,3 +2717,22 @@ if (addSystemActionButton) {
   addSystemActionButton.addEventListener('click', createNewSystemAction);
 }
 
+// Tooltip accessibility enhancement
+const messageMarkdownInfo = document.getElementById('messageMarkdownInfo');
+if (messageMarkdownInfo) {
+  // Close tooltip when clicking outside
+  document.addEventListener('click', (e) => {
+    const tooltip = document.getElementById('messageMarkdownTooltip');
+    if (tooltip && !messageMarkdownInfo.contains(e.target) && !tooltip.contains(e.target)) {
+      messageMarkdownInfo.blur();
+    }
+  });
+  
+  // Handle Escape key to close tooltip
+  messageMarkdownInfo.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      messageMarkdownInfo.blur();
+    }
+  });
+}
+
