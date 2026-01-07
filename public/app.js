@@ -69,25 +69,6 @@ function initConversationElements() {
   conversationSelect = getConversationElement('conversationSelect');
   createConversationButton = getConversationElement('createConversationButton');
   
-  console.log('Initialized conversation elements:', {
-    conversationSelect: !!conversationSelect,
-    createConversationButton: !!createConversationButton,
-    appContainer: !!document.getElementById('appContainer'),
-    appContainerDisplay: document.getElementById('appContainer')?.style.display,
-    allSelects: document.querySelectorAll('select').length,
-    allButtons: document.querySelectorAll('button').length
-  });
-  
-  // Debug: log all elements in appContainer
-  const appContainer = document.getElementById('appContainer');
-  if (appContainer) {
-    console.log('Elements in appContainer:', {
-      selects: appContainer.querySelectorAll('select').length,
-      buttons: appContainer.querySelectorAll('button').length,
-      hasConversationSelect: !!appContainer.querySelector('#conversationSelect'),
-      innerHTML: appContainer.querySelector('.app-header')?.innerHTML.substring(0, 200)
-    });
-  }
 }
 
 let isWaitingForResponse = false;
@@ -267,19 +248,16 @@ if (passwordForm) {
 // Load all conversations
 async function loadConversations() {
   try {
-    console.log('Loading conversations...');
     const response = await fetch('/api/conversations', {
       credentials: 'include'
     });
     
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Failed to load conversations:', response.status, errorText);
       throw new Error(`Failed to load conversations: ${response.status}`);
     }
     
     conversations = await response.json();
-    console.log('Loaded conversations:', conversations);
     
     // Update dropdown immediately
     updateConversationDropdown();
@@ -288,31 +266,25 @@ async function loadConversations() {
     if (conversations.length > 0) {
       if (!currentConversationId) {
         currentConversationId = conversations[0].id;
-        console.log('Auto-selecting first conversation:', currentConversationId);
       }
       
       // Query select element and set value
       const select = getConversationElement('conversationSelect');
       if (select) {
         select.value = currentConversationId;
-        console.log('Set select value to:', currentConversationId);
         // Load the conversation data immediately
-        console.log('Loading conversation data immediately');
         await loadConversationData();
       } else {
-        console.warn('Select element not found, will be handled by createDropdownManually');
         // The createDropdownManually function will handle loading the conversation
         await createDropdownManually();
       }
     } else if (conversations.length === 0) {
-      console.warn('No conversations found. Create a new conversation to get started.');
       const select = getConversationElement('conversationSelect');
       if (select) {
         select.innerHTML = '<option value="">No conversations - Create one below</option>';
       }
     }
   } catch (error) {
-    console.error('Error loading conversations:', error);
     const select = getConversationElement('conversationSelect');
     if (select) {
       select.innerHTML = `<option value="">Error: ${error.message}</option>`;
@@ -347,14 +319,6 @@ function updateConversationDropdown() {
   }
   
   if (!select) {
-    console.error('conversationSelect element not found after all attempts');
-    console.log('Debug info:', {
-      allSelects: Array.from(document.querySelectorAll('select')).map(s => ({ id: s.id, className: s.className })),
-      appContainer: !!document.getElementById('appContainer'),
-      header: !!document.querySelector('.app-header'),
-      headerHTML: document.querySelector('.app-header')?.innerHTML.substring(0, 500)
-    });
-    
     // Aggressive retry - try multiple times with increasing delays
     let retryCount = 0;
     const maxRetries = 5;
@@ -366,12 +330,10 @@ function updateConversationDropdown() {
       
       if (select) {
         clearInterval(retryInterval);
-        console.log('Found conversationSelect on retry', retryCount);
         conversationSelect = select;
         updateConversationDropdown();
       } else if (retryCount >= maxRetries) {
         clearInterval(retryInterval);
-        console.error('conversationSelect not found after', maxRetries, 'retries');
         // Create the dropdown manually if it doesn't exist
         createDropdownManually();
       }
@@ -381,7 +343,6 @@ function updateConversationDropdown() {
   
   // Found it!
   conversationSelect = select;
-  console.log('Successfully found and updating conversationSelect');
   
   select.innerHTML = '';
   
@@ -405,7 +366,6 @@ function updateConversationDropdown() {
 function createModalManually() {
   const appContainer = document.getElementById('appContainer');
   if (!appContainer) {
-    console.error('Cannot create modal - appContainer not found');
     return;
   }
   
@@ -468,8 +428,6 @@ function createModalManually() {
     } else {
       appContainer.appendChild(modal);
     }
-    
-    console.log('Manually created conversation modal');
   }
   
   // Show the modal
@@ -485,7 +443,6 @@ function createModalManually() {
 async function createDropdownManually() {
   const header = document.querySelector('.app-header');
   if (!header) {
-    console.error('Cannot create dropdown - header not found');
     return;
   }
   
@@ -517,7 +474,6 @@ async function createDropdownManually() {
   }
   
   conversationSelect = select;
-  console.log('Manually created conversation dropdown');
   
   // Update dropdown with conversations
   updateConversationDropdown();
@@ -527,42 +483,29 @@ async function createDropdownManually() {
     // If no conversation is selected yet, select the first one
     if (!currentConversationId) {
       currentConversationId = conversations[0].id;
-      console.log('No conversation selected, selecting first:', currentConversationId);
-    } else {
-      console.log('Conversation already selected:', currentConversationId);
     }
     
     // Set the select value to match currentConversationId
     if (select && currentConversationId) {
       select.value = currentConversationId;
-      console.log('Set select value to conversation:', currentConversationId);
     }
     
     // Always load the conversation data if we have a conversationId
     if (currentConversationId) {
-      console.log('About to load conversation data for:', currentConversationId);
       try {
         await loadConversationData();
-        console.log('Conversation data loaded successfully');
       } catch (error) {
-        console.error('Error loading conversation data:', error);
+        // Error loading conversation data
       }
-    } else {
-      console.error('No currentConversationId to load!');
     }
-  } else {
-    console.warn('No conversations available to load');
   }
 }
 
 // Load conversation data for the selected conversation
 async function loadConversationData() {
   if (!currentConversationId) {
-    console.warn('loadConversationData called but no currentConversationId');
     return;
   }
-  
-  console.log('Loading conversation data for ID:', currentConversationId);
   
   // Clear UI immediately for better perceived performance
   if (chatMessages) chatMessages.innerHTML = '';
@@ -602,15 +545,10 @@ async function loadConversationData() {
         body: JSON.stringify({ conversationId: currentConversationId }),
         credentials: 'include'
       }).catch(err => {
-        console.error('Error resetting conversation:', err);
         return { ok: false };
       }),
       loadConversationEditor()
     ]);
-    
-    if (!resetResponse.ok) {
-      console.error('Failed to reset conversation:', resetResponse.status);
-    }
     
     updateAddRowButtonText(null);
     
@@ -619,11 +557,9 @@ async function loadConversationData() {
       hydrateMessagesFromData(loadedData);
     } else {
       // Send empty message to trigger first AI response only if no messages exist
-      console.log('No existing messages, triggering first AI message');
       sendMessage('', true);
     }
   } catch (error) {
-    console.error('Error loading conversation editor:', error);
     // Fallback: try to trigger first message even on error
     sendMessage('', true);
   }
@@ -633,8 +569,6 @@ async function loadConversationData() {
 
 // Initialize app (moved from DOMContentLoaded)
 async function initializeApp() {
-  console.log('Initializing app...');
-  
   // Set up auto-resize for message input
   if (messageInput) {
     messageInput.addEventListener('input', () => {
@@ -675,17 +609,14 @@ function setupConversationHandlers() {
                      (e.target.id === 'createConversationButton' ? e.target : null);
       
       if (button) {
-        console.log('Create conversation button clicked');
         e.preventDefault();
         e.stopPropagation();
         
         const modal = getConversationElement('createConversationModal');
         const nameInput = getConversationElement('newConversationName');
-        console.log('Modal found:', !!modal, 'Name input found:', !!nameInput);
         
         if (modal) {
           modal.style.display = 'flex';
-          console.log('Modal displayed');
           if (nameInput) {
             nameInput.value = '';
             // Focus after a brief delay to ensure modal is visible
@@ -694,20 +625,11 @@ function setupConversationHandlers() {
             }, 50);
           }
         } else {
-          console.error('Modal not found! Trying to find it...');
           // Try to find modal using different methods
           const modalById = document.getElementById('createConversationModal');
           const modalByQuery = document.querySelector('#createConversationModal');
           const modalInBody = document.body.querySelector('#createConversationModal');
           const allModals = document.querySelectorAll('[id="createConversationModal"]');
-          console.log('Modal search results:', {
-            byId: !!modalById,
-            byQuery: !!modalByQuery,
-            inBody: !!modalInBody,
-            allModals: allModals.length,
-            appContainer: !!appContainer,
-            appContainerHTML: appContainer ? appContainer.innerHTML.substring(0, 500) : 'no container'
-          });
           
           // If we found it by another method, use it
           if (modalById || modalByQuery || modalInBody || allModals.length > 0) {
@@ -721,7 +643,6 @@ function setupConversationHandlers() {
             }
           } else {
             // Modal doesn't exist - create it
-            console.log('Creating modal manually');
             createModalManually();
           }
         }
@@ -840,7 +761,6 @@ async function sendMessage(userMessage, isInitial = false) {
   autoFillIndicator.style.display = 'none';
 
   if (!currentConversationId) {
-    console.error('No conversation selected');
     return;
   }
 
@@ -899,7 +819,6 @@ async function sendMessage(userMessage, isInitial = false) {
       isWaitingForResponse = false;
     }
   } catch (error) {
-    console.error('Error:', error);
     addMessage('System', 'Error: Could not connect to server. Please try again.');
     messageInput.disabled = false;
     sendButton.disabled = false;
@@ -1176,8 +1095,6 @@ function hydrateMessagesFromData(data) {
     return;
   }
   
-  console.log('Hydrating', data.length, 'messages');
-  
   // Reset counters
   aiAgentMessageNumber = 0;
   systemActionCounter = 0;
@@ -1329,8 +1246,6 @@ function hydrateMessagesFromData(data) {
   requestAnimationFrame(() => {
     scrollToBottom();
   });
-  
-  console.log('Hydration complete');
 }
 
 // Add message to chat
@@ -1588,7 +1503,6 @@ function cancelEditMode(messageDiv) {
 // Save message edit
 async function saveMessageEdit(messageDiv, dataIndex, newMessage) {
   if (dataIndex === -1 || !conversationData[dataIndex]) {
-    console.error('Invalid data index for saving message');
     cancelEditMode(messageDiv);
     return;
   }
@@ -1655,7 +1569,6 @@ async function saveMessageEdit(messageDiv, dataIndex, newMessage) {
       alert('Failed to save message: ' + (result.error || 'Unknown error'));
     }
   } catch (error) {
-    console.error('Error saving message:', error);
     // Revert on error
     conversationData[dataIndex].message = oldMessage;
     cancelEditMode(messageDiv);
@@ -1801,7 +1714,6 @@ function cancelSystemActionEditMode(actionDiv) {
 // Save system action edit
 async function saveSystemActionEdit(actionDiv, conversationDataIndex, actionIndex, newContent) {
   if (conversationDataIndex === -1 || actionIndex === -1 || !conversationData[conversationDataIndex]) {
-    console.error('Invalid indices for saving system action');
     cancelSystemActionEditMode(actionDiv);
     return;
   }
@@ -1848,7 +1760,7 @@ async function saveSystemActionEdit(actionDiv, conversationDataIndex, actionInde
         renderConversationTable();
       }
     } catch (error) {
-      console.error('Error saving:', error);
+      // Error saving
     }
     
     currentlyEditingSystemAction = null;
@@ -1928,7 +1840,6 @@ async function saveSystemActionEdit(actionDiv, conversationDataIndex, actionInde
       alert('Failed to save system action: ' + (result.error || 'Unknown error'));
     }
   } catch (error) {
-    console.error('Error saving system action:', error);
     // Revert on error
     conversationData[conversationDataIndex].system_actions = oldSystemActions;
     cancelSystemActionEditMode(actionDiv);
@@ -1939,7 +1850,6 @@ async function saveSystemActionEdit(actionDiv, conversationDataIndex, actionInde
 // Delete system action
 async function deleteSystemAction(actionDiv, conversationDataIndex, actionIndex) {
   if (conversationDataIndex === -1 || actionIndex === -1 || !conversationData[conversationDataIndex]) {
-    console.error('Invalid indices for deleting system action');
     return;
   }
   
@@ -1988,7 +1898,6 @@ async function deleteSystemAction(actionDiv, conversationDataIndex, actionIndex)
         alert('Failed to delete system action: ' + (result.error || 'Unknown error'));
       }
     } catch (error) {
-      console.error('Error deleting system action:', error);
       conversationData[conversationDataIndex].system_actions = oldSystemActions;
       alert('Failed to delete system action. Please try again.');
     }
@@ -2158,7 +2067,6 @@ async function resetConversation() {
     // Restart conversation
     sendMessage('', true);
   } catch (error) {
-    console.error('Error resetting conversation:', error);
     addMessage('System', 'Error: Could not reset conversation. Please try again.');
   }
 }
@@ -2227,7 +2135,6 @@ async function loadConversationEditor() {
     
     return conversationData;
   } catch (error) {
-    console.error('Error loading conversation:', error);
     const tbody = document.getElementById('conversationTableBody');
     if (tbody) {
       tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; padding: 20px; color: #ff4444;">Error loading conversation: ${error.message}</td></tr>`;
@@ -2483,14 +2390,6 @@ function selectTableRow(rowElement, conversationIndex) {
         messageElement.classList.remove('message-highlighted');
       }, 2000);
     });
-  } else {
-    // Message doesn't exist yet - could show a message or do nothing
-    console.log(`Message with conversation index ${conversationIndex} not found in conversation panel. Make sure the conversation has progressed to this message.`);
-    // Show all available indices for debugging
-    const allIndices = Array.from(chatMessages.querySelectorAll('.message'))
-      .map(msg => msg.getAttribute('data-conversation-index'))
-      .filter(idx => idx !== null);
-    console.log('Available conversation indices in panel:', allIndices);
   }
 }
 
@@ -2615,7 +2514,6 @@ async function saveConversation() {
       alert('Failed to save conversation: ' + (result.error || 'Unknown error'));
     }
   } catch (error) {
-    console.error('Error saving conversation:', error);
     alert('Failed to save conversation');
   }
 }

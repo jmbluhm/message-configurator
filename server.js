@@ -17,7 +17,6 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
-  console.error('Error: SUPABASE_URL and SUPABASE_ANON_KEY must be set in environment variables');
   process.exit(1);
 }
 
@@ -172,10 +171,8 @@ async function loadConversation(conversationId) {
       currentIndex: 0
     });
     
-    console.log(`Loaded ${messages.length} messages for conversation ${conversationId}`);
     return messages;
   } catch (error) {
-    console.error('Error loading conversation from database:', error);
     throw error;
   }
 }
@@ -204,7 +201,6 @@ app.get('/api/conversations', async (req, res) => {
     
     res.json(data || []);
   } catch (error) {
-    console.error('Error fetching conversations:', error);
     res.status(500).json({ error: 'Failed to fetch conversations' });
   }
 });
@@ -236,7 +232,6 @@ app.post('/api/conversations', async (req, res) => {
     
     res.json(data);
   } catch (error) {
-    console.error('Error creating conversation:', error);
     res.status(500).json({ error: 'Failed to create conversation' });
   }
 });
@@ -305,7 +300,6 @@ app.post('/api/next-message', async (req, res) => {
       hasMore: state.currentIndex < conversation.length
     });
   } catch (error) {
-    console.error('Error getting next message:', error);
     res.status(500).json({ error: 'Failed to get next message' });
   }
 });
@@ -324,7 +318,6 @@ app.post('/api/reset', (req, res) => {
     
     res.json({ message: 'Conversation reset' });
   } catch (error) {
-    console.error('Error resetting conversation:', error);
     res.status(500).json({ error: 'Failed to reset conversation' });
   }
 });
@@ -358,7 +351,6 @@ app.get('/api/conversation', async (req, res) => {
     
     res.json(conversationData);
   } catch (error) {
-    console.error('Error fetching conversation:', error);
     res.status(500).json({ error: 'Failed to fetch conversation' });
   }
 });
@@ -424,7 +416,6 @@ app.post('/api/conversation', async (req, res) => {
     
     res.json({ message: 'Conversation saved successfully', count: dbData.length });
   } catch (error) {
-    console.error('Error saving conversation:', error);
     const errorMessage = error.message || 'Failed to save conversation';
     res.status(500).json({ error: `Failed to save conversation: ${errorMessage}` });
   }
@@ -434,5 +425,5 @@ app.post('/api/conversation', async (req, res) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
+  // Server started
 });
