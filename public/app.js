@@ -2096,47 +2096,66 @@ function showActionsModal(rowIndex, actionsArray, rowData) {
     
     // Close button handler
     closeButton.addEventListener('click', () => {
+      saveModalActions(modal);
       modal.style.display = 'none';
     });
     
     // Close on overlay click
     modal.addEventListener('click', (e) => {
       if (e.target === modal) {
+        saveModalActions(modal);
         modal.style.display = 'none';
       }
     });
     
-    // Add action button handler
-    addButton.addEventListener('click', () => {
-      modal.style.display = 'none';
-      // Find the corresponding message in conversation panel and add action
-      const messageElement = chatMessages.querySelector(`.message[data-conversation-index="${rowIndex}"]`);
-      if (messageElement) {
-        // Select the message
-        document.querySelectorAll('.message').forEach(msg => {
-          msg.classList.remove('message-selected');
-        });
-        messageElement.classList.add('message-selected');
-        selectedMessageInConversation = messageElement;
-        
-        // Scroll to message
-        messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        
-        // Add action
-        setTimeout(() => {
-          createNewSystemAction();
-        }, 300);
-      } else {
-        // If message not in conversation panel, add action directly
-        createActionForRow(rowIndex);
+    // Close on Escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && modal.style.display === 'flex') {
+        saveModalActions(modal);
+        modal.style.display = 'none';
       }
     });
+    
+    // Add action button handler - now adds empty row in modal
+    addButton.addEventListener('click', () => {
+      const actionsList = modal.querySelector('#actionsModalList');
+      const rowIndex = parseInt(modal.getAttribute('data-row-index'));
+      const messageCode = modal.getAttribute('data-message-code');
+      
+      // Remove "no actions" message if present
+      const noActionsMsg = actionsList.querySelector('div:not(.modal-action-item)');
+      if (noActionsMsg && noActionsMsg.textContent.includes('No actions yet')) {
+        noActionsMsg.remove();
+      }
+      
+      // Get current actions count (excluding empty new actions that haven't been saved)
+      const existingActions = actionsList.querySelectorAll('.modal-action-item');
+      const newActionIndex = existingActions.length;
+      const actionCode = `${messageCode}.${newActionIndex + 1}`;
+      
+      // Create new empty action row
+      const actionItem = createModalActionItem(actionCode, '', newActionIndex, true, rowIndex);
+      actionsList.appendChild(actionItem);
+      
+      // Scroll to new action
+      actionItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      
+      // Focus on the textarea
+      setTimeout(() => {
+        const textarea = actionItem.querySelector('.modal-action-textarea');
+        if (textarea) {
+          textarea.focus();
+        }
+      }, 100);
+    });
   }
+  
+  // Store row data in modal for later use
+  modal.setAttribute('data-row-index', rowIndex);
   
   // Update modal content
   const title = modal.querySelector('#actionsModalTitle');
   const actionsList = modal.querySelector('#actionsModalList');
-  const addButton = modal.querySelector('#actionsModalAddButton');
   
   const speaker = rowData.speaker || 'Unknown';
   const messageCode = (() => {
@@ -2148,6 +2167,7 @@ function showActionsModal(rowIndex, actionsArray, rowData) {
     return `Turn ${rowIndex + 1}`;
   })();
   
+  modal.setAttribute('data-message-code', messageCode);
   title.textContent = `Actions for ${speaker} (${messageCode})`;
   
   // Clear and populate actions list
@@ -2162,35 +2182,261 @@ function showActionsModal(rowIndex, actionsArray, rowData) {
     actionsList.appendChild(noActions);
   } else {
     actionsArray.forEach((action, index) => {
-      const actionItem = document.createElement('div');
-      actionItem.style.padding = 'var(--spacing-md)';
-      actionItem.style.marginBottom = 'var(--spacing-sm)';
-      actionItem.style.background = 'var(--color-bg-light)';
-      actionItem.style.border = '1px solid var(--color-border)';
-      actionItem.style.borderRadius = 'var(--border-radius-md)';
-      
       const actionContent = typeof action === 'string' ? action : (action.content || '');
-      const actionCode = `${messageCode}.${index + 1}`;
-      
-      const codeSpan = document.createElement('div');
-      codeSpan.style.fontSize = 'var(--font-size-xs)';
-      codeSpan.style.color = 'var(--color-text-light)';
-      codeSpan.style.marginBottom = 'var(--spacing-xs)';
-      codeSpan.style.fontWeight = '600';
-      codeSpan.textContent = actionCode;
-      
-      const contentDiv = document.createElement('div');
-      contentDiv.style.color = 'var(--color-text)';
-      contentDiv.textContent = actionContent || '(Empty action)';
-      
-      actionItem.appendChild(codeSpan);
-      actionItem.appendChild(contentDiv);
+      const actionItem = createModalActionItem(`${messageCode}.${index + 1}`, actionContent, index, false, rowIndex);
       actionsList.appendChild(actionItem);
     });
   }
   
   // Show modal
   modal.style.display = 'flex';
+}
+
+// Update action codes in modal after deletion
+function updateModalActionCodes(actionsList) {
+  const modal = actionsList.closest('#actionsModal');
+  if (!modal) return;
+  
+  const messageCode = modal.getAttribute('data-message-code');
+  const actionItems = actionsList.querySelectorAll('.modal-action-item');
+  
+  actionItems.forEach((item, index) => {
+    const newActionCode = `${messageCode}.${index + 1}`;
+    const codeSpan = item.querySelector('div:first-child > div:first-child');
+    if (codeSpan) {
+      codeSpan.textContent = newActionCode;
+    }
+    // Update data-action-index to match new position
+    item.setAttribute('data-action-index', index);
+  });
+}
+
+// Create an action item in the modal
+function createModalActionItem(actionCode, actionContent, actionIndex, isNew = false, rowIndex) {
+  const actionItem = document.createElement('div');
+  actionItem.className = 'modal-action-item';
+  if (isNew) {
+    actionItem.classList.add('empty-new-action');
+  }
+  actionItem.setAttribute('data-action-index', actionIndex);
+  actionItem.style.padding = 'var(--spacing-md)';
+  actionItem.style.marginBottom = 'var(--spacing-sm)';
+  actionItem.style.background = 'var(--color-bg-light)';
+  actionItem.style.border = '1px solid var(--color-border)';
+  actionItem.style.borderRadius = 'var(--border-radius-md)';
+  actionItem.style.position = 'relative';
+  
+  // Header with code and delete button
+  const headerDiv = document.createElement('div');
+  headerDiv.style.display = 'flex';
+  headerDiv.style.justifyContent = 'space-between';
+  headerDiv.style.alignItems = 'center';
+  headerDiv.style.marginBottom = 'var(--spacing-xs)';
+  
+  const codeSpan = document.createElement('div');
+  codeSpan.style.fontSize = 'var(--font-size-xs)';
+  codeSpan.style.color = 'var(--color-text-light)';
+  codeSpan.style.fontWeight = '600';
+  codeSpan.textContent = actionCode;
+  
+  const deleteButton = document.createElement('button');
+  deleteButton.type = 'button';
+  deleteButton.className = 'btn btn-secondary modal-action-delete';
+  deleteButton.textContent = 'Delete';
+  deleteButton.style.padding = 'var(--spacing-xs) var(--spacing-sm)';
+  deleteButton.style.fontSize = 'var(--font-size-xs)';
+  deleteButton.style.background = 'var(--color-danger)';
+  deleteButton.style.color = 'white';
+  deleteButton.style.border = 'none';
+  deleteButton.title = 'Delete this action';
+  deleteButton.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (confirm('Delete this action?')) {
+      actionItem.remove();
+      // Update action codes for remaining actions
+      updateModalActionCodes(actionItem.parentElement);
+      // If this was the last item, show "no actions" message
+      const actionsList = actionItem.parentElement;
+      const remainingActions = actionsList.querySelectorAll('.modal-action-item');
+      if (remainingActions.length === 0) {
+        const noActions = document.createElement('div');
+        noActions.style.padding = 'var(--spacing-lg)';
+        noActions.style.textAlign = 'center';
+        noActions.style.color = 'var(--color-text-light)';
+        noActions.textContent = 'No actions yet. Click "Add Action" to create one.';
+        actionsList.appendChild(noActions);
+      }
+    }
+  });
+  
+  headerDiv.appendChild(codeSpan);
+  headerDiv.appendChild(deleteButton);
+  actionItem.appendChild(headerDiv);
+  
+  // Content area - editable textarea
+  const contentContainer = document.createElement('div');
+  contentContainer.className = 'modal-action-content-container';
+  
+  const textarea = document.createElement('textarea');
+  textarea.className = 'modal-action-textarea';
+  textarea.value = actionContent;
+  textarea.rows = 2;
+  textarea.style.width = '100%';
+  textarea.style.padding = 'var(--spacing-sm)';
+  textarea.style.border = '1px solid var(--color-border)';
+  textarea.style.borderRadius = 'var(--border-radius-sm)';
+  textarea.style.fontSize = 'var(--font-size-sm)';
+  textarea.style.fontFamily = 'inherit';
+  textarea.style.resize = 'vertical';
+  textarea.style.minHeight = '60px';
+  textarea.placeholder = 'Enter action description...';
+  
+  // Auto-resize textarea
+  textarea.addEventListener('input', () => {
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+  });
+  
+  // Set initial height
+  textarea.style.height = 'auto';
+  textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+  
+  contentContainer.appendChild(textarea);
+  actionItem.appendChild(contentContainer);
+  
+  // Click handler to focus textarea (for better UX)
+  actionItem.addEventListener('click', (e) => {
+    if (!e.target.closest('.modal-action-delete')) {
+      textarea.focus();
+    }
+  });
+  
+  return actionItem;
+}
+
+// Save actions from modal to conversationData and backend
+async function saveModalActions(modal) {
+  const rowIndex = parseInt(modal.getAttribute('data-row-index'));
+  if (isNaN(rowIndex) || rowIndex < 0 || rowIndex >= conversationData.length) {
+    return;
+  }
+  
+  const actionsList = modal.querySelector('#actionsModalList');
+  const actionItems = actionsList.querySelectorAll('.modal-action-item');
+  
+  // Get existing actions for this row to match by content/ID
+  const existingActions = (conversationData[rowIndex].actions || []).slice(); // Copy array
+  const usedActionIds = new Set();
+  
+  // Collect all actions from the modal
+  const newActions = [];
+  
+  actionItems.forEach((item) => {
+    const textarea = item.querySelector('.modal-action-textarea');
+    if (textarea) {
+      const content = textarea.value.trim();
+      // Only add non-empty actions
+      if (content) {
+        // Try to match with existing action by content similarity
+        // First try to match by stored action index (for actions that weren't modified)
+        const storedIndex = parseInt(item.getAttribute('data-action-index'));
+        let matchedAction = null;
+        
+        if (storedIndex < existingActions.length) {
+          const candidate = existingActions[storedIndex];
+          const candidateContent = typeof candidate === 'string' ? candidate : (candidate.content || '');
+          // If content matches (or is similar), use this action's ID
+          if (candidateContent.trim() === content || 
+              (candidateContent.trim() && content.includes(candidateContent.trim().substring(0, 20)))) {
+            matchedAction = candidate;
+          }
+        }
+        
+        // If no match by index, try to find by content in remaining actions
+        if (!matchedAction) {
+          for (let i = 0; i < existingActions.length; i++) {
+            const candidate = existingActions[i];
+            const candidateContent = typeof candidate === 'string' ? candidate : (candidate.content || '');
+            const candidateId = typeof candidate === 'object' ? candidate.id : null;
+            
+            if (candidateId && !usedActionIds.has(candidateId) && 
+                candidateContent.trim() === content) {
+              matchedAction = candidate;
+              break;
+            }
+          }
+        }
+        
+        // Preserve ID if we found a match
+        if (matchedAction && typeof matchedAction === 'object' && matchedAction.id) {
+          newActions.push({
+            id: matchedAction.id,
+            content: content
+          });
+          usedActionIds.add(matchedAction.id);
+        } else {
+          newActions.push({
+            content: content
+          });
+        }
+      }
+    }
+  });
+  
+  // Update conversationData
+  if (!conversationData[rowIndex].actions) {
+    conversationData[rowIndex].actions = [];
+  }
+  conversationData[rowIndex].actions = newActions;
+  
+  // Save to backend
+  try {
+    await saveConversationToBackend();
+    // Update the actions count in the table
+    renderConversationTable();
+    // Refresh actions in the Actions panel
+    refreshActionsPanel();
+  } catch (error) {
+    alert('Failed to save actions: ' + (error.message || 'Unknown error'));
+  }
+}
+
+// Refresh the Actions panel to reflect changes
+function refreshActionsPanel() {
+  // Clear current actions
+  systemNotes.innerHTML = '';
+  
+  // Re-render all actions from conversationData
+  conversationData.forEach((row, rowIndex) => {
+    if (row.actions && row.actions.length > 0) {
+      const messageElement = chatMessages.querySelector(`.message[data-conversation-index="${rowIndex}"]`);
+      let messageCode = null;
+      
+      if (messageElement) {
+        messageCode = messageElement.getAttribute('data-message-code');
+      } else {
+        // Generate message code
+        let messageNumber = 0;
+        for (let i = 0; i <= rowIndex; i++) {
+          if (conversationData[i].speaker === row.speaker) {
+            messageNumber++;
+          }
+        }
+        const prefix = row.speaker === 'AI Agent' ? 'A' : 'M';
+        messageCode = `${prefix}${messageNumber}`;
+      }
+      
+      if (messageCode) {
+        const isSystemAction = row.speaker === 'AI Agent';
+        row.actions.forEach((action, actionIndex) => {
+          const actionCode = `${messageCode}.${actionIndex + 1}`;
+          const actionContent = typeof action === 'string' ? action : (action.content || '');
+          const actionId = action.id || null;
+          addSystemAction(actionContent, actionCode, rowIndex, actionIndex, actionId, isSystemAction);
+        });
+      }
+    }
+  });
 }
 
 // Create action for a specific row (when message not in conversation panel)

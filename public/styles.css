@@ -1439,3 +1439,25 @@ body {
 #actionsModalList::-webkit-scrollbar-thumb:hover {
     background: #a0a0a0;
 }
+
+.modal-action-item {
+    transition: all 0.2s ease;
+}
+
+.modal-action-item:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.modal-action-textarea {
+    outline: none;
+    transition: border-color 0.2s ease;
+}
+
+.modal-action-textarea:focus {
+    border-color: var(--color-primary) !important;
+    box-shadow: 0 0 0 2px rgba(255, 184, 0, 0.1);
+}
+
+.modal-action-delete:hover {
+    background: var(--color-danger-hover) !important;
+}
